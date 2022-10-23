@@ -142,8 +142,15 @@ def _compute_r2(actual: np.ndarray, predicted: np.ndarray) -> float:
     return 1 - (ss_residual / ss_total)
 
 def _compute_pearson(actual: np.ndarray, predicted: np.ndarray) -> float:
-    return np.corrcoef(actual, predicted)
+    # Formula source: https://en.wikipedia.org/wiki/Pearson_correlation_coefficient#For_a_sample
+    mean_actual = actual.mean()
+    mean_predicted = predicted.mean()
+    numerator = ((actual - mean_actual) * (predicted - mean_predicted)).sum()
+    denominator = np.sqrt(((actual - mean_actual) ** 2).sum() * ((predicted - mean_predicted) ** 2).sum())
 
+    if denominator == 0:
+        return math.nan
+    return numerator / denominator
 
 def _sklearn_compute_metric(actual, predicted, metric: str, positive_class: str=None) -> float:
     if metric == 'acc':
@@ -187,4 +194,4 @@ def _sklearn_compute_r2(actual: np.ndarray, predicted: np.ndarray) -> float:
     return sklearn_metrics.r2_score(actual, predicted)
 
 def _sklearn_compute_pearson(actual: np.ndarray, predicted: np.ndarray) -> float:
-    return sklearn_feature_selection.r_regression(actual, predicted)
+    return sklearn_feature_selection.r_regression(actual, predicted.ravel())

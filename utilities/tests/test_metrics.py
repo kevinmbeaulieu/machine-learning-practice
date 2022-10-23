@@ -32,12 +32,11 @@ class TestRegressionMetrics(TestMetrics):
 
         self.verify_metric(actual_prices, predicted_prices, 'r2')
 
-    # TODO: Fix computation of pearson coefficient
-    # def test_compute_pearson(self):
-    #     actual_prices = self.df[['SalePrice']].to_numpy()
-    #     predicted_prices = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).reshape(10,1)
+    def test_compute_pearson(self):
+        actual_prices = self.df[['SalePrice']].to_numpy()
+        predicted_prices = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).reshape(10,1)
 
-    #     self.verify_metric(actual_prices, predicted_prices, 'pearson')
+        self.verify_metric(actual_prices, predicted_prices, 'pearson')
 
 class TestClassificationMetrics(TestMetrics):
     def setUp(self):
