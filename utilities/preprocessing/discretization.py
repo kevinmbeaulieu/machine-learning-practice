@@ -34,8 +34,6 @@ def _discretize_equal_width(col: pd.Series, n_bins: int) -> pd.Series:
     return result
 
 def _discretize_equal_freq(col: pd.Series, n_bins: int) -> pd.Series:
-    bin_pct_size = 1.0 / n_bins
-    result = (col.rank(pct=True) // bin_pct_size).astype('int')
-    result = result + 1 # Index discretized values from 1...n_bins, rather than 0...(n_bins-1)
+    result = ((col.rank() - 1) // n_bins).astype('int') + 1
     result = result.clip(lower=1, upper=n_bins) # Ensure max value doesn't get put into an (n_bins+1)'th bin
     return result
