@@ -1,3 +1,6 @@
+import math
+import numpy as np
+import statistics
 import pandas as pd
 
 from utilities.preprocessing.dataset import Dataset
@@ -54,58 +57,42 @@ class NullModel(Model):
         return pd.Series([self.predict_value]).repeat(df.shape[0])
 
 
-class KNNClassifierModel(Model):
+class _KNNModel(Model):
     """
-    K-Nearest Neighbors Classifier Model.
+    Abstract parent class for K-Nearest Neighbors models.
     """
-
     def __init__(self, k: int):
+        """
+        :param k: int, Number of nearest neighbors to use for prediction
+        """
+
         self.k = k
         self.df_train = None
         self.dataset = None
 
     def train(self, df: pd.DataFrame, dataset: Dataset):
         self.df_train = df
-        self.classes = df['class'].unique()
         self.dataset = dataset
 
-    def predict(self, df: pd.DataFrame) -> pd.Series:
-        if self.df_train is None or self.dataset is None:
-            raise Exception("Failed to predict values with KNN classifier model before model was trained")
-
-        if self.dataset.task != 'classification':
-            raise Exception("Failed to predict values with KNN classifier model for dataset with unrecognized task {}".format(self.dataset.task))
-
-        y_pred = pd.Series(dtype='float64', index=range(df.shape[0]))
-        
-        for row in df.shape[0]:
-            distances: list[tuple[float, str]] = []
-            for train_row in self.df_train.shape[0]:
-                x = df.iloc[row]
-                x_train = self.df_train.iloc[train_row]
-                distance = self._distance(x, x_train)
-                distances.append((distance, x_train['class']))
-            y_pred.iloc[row] = self._get_knn_class(distances)
-        
-        return y_pred
-
-    def _distance(self, left: pd.Series, right: pd.Series) -> float:
+    def _distance(self, df_left: pd.DataFrame, left: pd.Series, df_right: pd.DataFrame, right: pd.Series) -> float:
         """
         Calculates the distance between two data points.
 
+        :param df_left: pd.DataFrame, Data frame containing the left data point
         :param left: pd.Series, Data point
+        :param df_right: pd.DataFrame, Data frame containing the right data point
         :param right: pd.Series, Data point
 
         :return float, Distance between the two data points
         """
+
         if left.shape != right.shape:
             raise Exception("Failed to calculate distance between data points with different shapes")
 
         distance = 0
-        for col in left.size:
+        for col in df_left.columns:
             if col in self.dataset.nominal_cols:
-                # TODO: Implement nominal distance calculation
-                pass
+                distance += self._vdm_distance_sq(df_left, left[col], df_right, right[col])
             else:
                 distance += self._euclidean_distance_sq(left[col], right[col])
         return distance ** 0.5
@@ -142,6 +129,38 @@ class KNNClassifierModel(Model):
 
         return distance
 
+
+
+class KNNClassifierModel(_KNNModel):
+    """
+    K-Nearest Neighbors Classifier Model.
+    """
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        if self.dataset.task != 'classification':
+            raise Exception("Failed to predict values with KNN classifier model for dataset with unrecognized task {}".format(self.dataset.task))
+
+        super().train(df, dataset)
+
+        self.classes = df['class'].unique()
+
+    def predict(self, df: pd.DataFrame) -> pd.Series:
+        if self.df_train is None or self.dataset is None:
+            raise Exception("Failed to predict values with KNN classifier model before model was trained")
+
+        y_pred = pd.Series(dtype='float64', index=range(df.shape[0]))
+
+        for row in range(df.shape[0]):
+            distances: list[tuple[float, str]] = []
+            for train_row in self.df_train.shape[0]:
+                x = df.iloc[row]
+                x_train = self.df_train.iloc[train_row]
+                distance = self._distance(df, x, self.df_train, x_train)
+                distances.append((distance, x_train['class']))
+            y_pred.iloc[row] = self._get_knn_class(distances)
+
+        return y_pred
+
     def _get_knn_class(self, distances: list[tuple[float, str]]) -> str:
         """
         Finds the most common class label among the k nearest neighbors.
@@ -153,3 +172,43 @@ class KNNClassifierModel(Model):
         distances.sort(key=lambda x: x[0])
         classes = [distances[i][1] for i in range(self.k)]
         return max(classes, key=classes.count)
+
+class KNNRegressionModel(_KNNModel):
+    """
+    K-Nearest Neighbors Regression Model.
+    """
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        if self.dataset.task != 'regression':
+            raise Exception("Failed to predict values with KNN regression model for dataset with unrecognized task {}".format(self.dataset.task))
+
+        super().train(df, dataset)
+
+        self.γ = 1 / self.df_train['output'].std()
+
+    def predict(self, df: pd.DataFrame) -> pd.Series:
+        if self.df_train is None or self.dataset is None:
+            raise Exception("Failed to predict values with KNN regression model before model was trained")
+
+        return pd.Series([self._get_knn_output(df, row) for row in range(df.shape[0])])
+
+    def _get_knn_output(self, df: pd.DataFrame, row: int) -> float:
+        """
+        Calculates the output for a single row in the test set using the KNN smoother, where the KNN smoother is defined as
+        ghat(x) = sum_t (K(x, x_t) * y_t) / sum_t (K(x, x_t))
+        where x_t = t'th training example, y_t = t'th training example's output, and K(x, x_t) = exp[-γ ||x - x_t||_2].
+        """
+
+        numerator = np.sum(
+            [self._gaussian_kernel(df, row, train_row) * self.df_train.iloc[train_row]['output'] for train_row in range(self.df_train.shape[0])]
+        )
+        denominator = np.sum(
+            [self._gaussian_kernel(df, row, train_row) for train_row in range(self.df_train.shape[0])]
+        )
+        return numerator / denominator
+
+    def _gaussian_kernel(self, df: pd.DataFrame, row: int, row_train: int) -> float:
+        """
+        Compute K(x, x_q) = exp[-γ ||x - x_q||_2] for use in the kernel smoother.
+        """
+        return math.exp(-self.γ * super()._distance(df, row, self.df_train, row_train))
