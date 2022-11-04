@@ -108,7 +108,7 @@ class _KNNModel(Model):
         :param left: any, Left value
         :param df_right: pd.DataFrame, Data frame containing the right value
         :param right: any, Right value
-        
+
         :return float, squared VDM distance between the two nominal values
         """
         distance = 0
@@ -128,7 +128,6 @@ class _KNNModel(Model):
             distance += abs(C_left_a/C_left - C_right_a/C_right) ** vdm_exp
 
         return distance
-
 
 
 class KNNClassifierModel(_KNNModel):
@@ -173,6 +172,7 @@ class KNNClassifierModel(_KNNModel):
         classes = [distances[i][1] for i in range(self.k)]
         return max(classes, key=classes.count)
 
+
 class KNNRegressionModel(_KNNModel):
     """
     K-Nearest Neighbors Regression Model.
@@ -212,3 +212,62 @@ class KNNRegressionModel(_KNNModel):
         Compute K(x, x_q) = exp[-γ ||x - x_q||_2] for use in the kernel smoother.
         """
         return math.exp(-self.γ * super()._distance(df, row, self.df_train, row_train))
+
+
+class EditedKNNClassifierModel(KNNClassifierModel):
+    """
+    Edited K-Nearest Neighbors Classifier Model.
+    """
+    def __init__(self, k: int, df_val: pd.DataFrame):
+        """
+        :param k: int, Number of nearest neighbors to consider
+        :param df_val: pd.DataFrame, Validation set
+        """
+        super().__init__(k)
+        self.df_val = df_val
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        super().train(df, dataset)
+
+        self._edit_training_set()
+
+    def _edit_training_set(self):
+        """
+        Edited KNN algorithm:
+            1. Consider each data point individually.
+            2. For each data point, use its single nearest neighbor to make a prediction.
+            3. If the prediction is correct, mark the data point for deletion.
+            4. Stop editing once performance on the validation set starts to degrade.
+        """
+
+        max_iterations = 5
+        iterations = 0
+        prev_val_accuracy = np.inf
+        prev_df_train = None
+        while iterations < max_iterations:
+            validation_model = KNNClassifierModel(1)
+            validation_model.train(self.df_train, self.dataset)
+
+            # Remove all rows in the training set that are correctly classified by
+            # their single nearest neighbor.
+            self.df_train['prediction'] = validation_model.predict(self.df_train)
+            incorrectly_classified = self.df_train.loc[
+                self.df_train['prediction'] != self.df_train['class']
+            ]
+            self.df_train = incorrectly_classified
+            self.df_train.drop(columns=['prediction'], inplace=True)
+
+            # Stop editing if performance on the validation set starts to degrade.
+            df_val['predicted'] = self.predict(df_val)
+            val_accuracy = compute_metrics(
+                actual=df_val['class'].to_numpy(),
+                predicted=df_val['predicted'].to_numpy(),
+                metrics=['acc'],
+            )[0]
+            if val_accuracy < prev_val_accuracy:
+                # If accuracy has decreased, revert to the previous training set and stop editing.
+                self.df_train = prev_df_train
+                return
+
+            iterations += 1
+
