@@ -218,13 +218,15 @@ class EditedKNNClassifierModel(KNNClassifierModel):
     """
     Edited K-Nearest Neighbors Classifier Model.
     """
-    def __init__(self, k: int, df_val: pd.DataFrame):
+    def __init__(self, k: int, df_val: pd.DataFrame, max_iterations: int = 5):
         """
         :param k: int, Number of nearest neighbors to consider
         :param df_val: pd.DataFrame, Validation set
+        :param max_iterations: int, Maximum number of iterations to run the edited KNN algorithm
         """
         super().__init__(k)
         self.df_val = df_val
+        self.max_iterations = max_iterations
 
     def train(self, df: pd.DataFrame, dataset: Dataset):
         super().train(df, dataset)
@@ -240,11 +242,10 @@ class EditedKNNClassifierModel(KNNClassifierModel):
             4. Stop editing once performance on the validation set starts to degrade.
         """
 
-        max_iterations = 5
         iterations = 0
-        prev_val_accuracy = np.inf
+        prev_val_accuracy = 0
         prev_df_train = None
-        while iterations < max_iterations:
+        while iterations < self.max_iterations:
             validation_model = KNNClassifierModel(1)
             validation_model.train(self.df_train, self.dataset)
 
@@ -266,6 +267,66 @@ class EditedKNNClassifierModel(KNNClassifierModel):
             )[0]
             if val_accuracy < prev_val_accuracy:
                 # If accuracy has decreased, revert to the previous training set and stop editing.
+                self.df_train = prev_df_train
+                return
+
+            iterations += 1
+
+class EditedKNNRegressionModel(KNNRegressionModel):
+    """
+    Edited K-Nearest Neighbors Regression Model.
+    """
+    def __init__(self, k: int, df_val: pd.DataFrame, ϵ: float, max_iterations: int = 5):
+        """
+        :param k: int, Number of nearest neighbors to consider
+        :param df_val: pd.DataFrame, Validation set
+        :param ϵ: float, Tolerance for determining if a data point is correctly predicted
+        :param max_iterations: int, Maximum number of iterations to run the edited KNN algorithm
+        """
+        super().__init__(k)
+        self.df_val = df_val
+        self.ϵ = ϵ
+        self.max_iterations = max_iterations
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        super().train(df, dataset)
+
+        self._edit_training_set()
+
+    def _edit_training_set(self):
+        """
+        Edited KNN algorithm:
+            1. Consider each data point individually.
+            2. For each data point, use its single nearest neighbor to make a prediction.
+            3. If the prediction is correct, mark the data point for deletion.
+            4. Stop editing once performance on the validation set starts to degrade.
+        """
+
+        iterations = 0
+        prev_val_mse = np.inf
+        prev_df_train = None
+        while iterations < self.max_iterations:
+            validation_model = KNNRegressionModel(1)
+            validation_model.train(self.df_train, self.dataset)
+
+            # Remove all rows in the training set that are correctly classified by
+            # their single nearest neighbor.
+            self.df_train['prediction'] = validation_model.predict(self.df_train)
+            incorrectly_classified = self.df_train.loc[
+                np.abs(self.df_train['prediction'] - self.df_train['output']) > self.ϵ
+            ]
+            self.df_train = incorrectly_classified
+            self.df_train.drop(columns=['prediction'], inplace=True)
+
+            # Stop editing if performance on the validation set starts to degrade.
+            df_val['predicted'] = self.predict(df_val)
+            val_mse = compute_metrics(
+                actual=df_val['output'].to_numpy(),
+                predicted=df_val['predicted'].to_numpy(),
+                metrics=['mse'],
+            )[0]
+            if val_mse > prev_val_mse:
+                # If MSE has increased, revert to the previous training set and stop editing.
                 self.df_train = prev_df_train
                 return
 
