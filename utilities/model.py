@@ -3,6 +3,7 @@ import numpy as np
 import statistics
 import pandas as pd
 
+from utilities.metrics import compute_metrics
 from utilities.preprocessing.dataset import Dataset
 
 class Model:
@@ -86,11 +87,17 @@ class _KNNModel(Model):
         :return float, Distance between the two data points
         """
 
+        output_col = 'class' if self.dataset.task == 'classification' else 'output'
+        left = left.drop(output_col, errors='ignore')
+        right = right.drop(output_col, errors='ignore')
+
         if left.shape != right.shape:
-            raise Exception("Failed to calculate distance between data points with different shapes")
+            raise Exception("Failed to calculate distance between vectors with different shapes {} != {}.\n\n{}\n\n{}".format(left.shape, right.shape, left, right))
 
         distance = 0
         for col in df_left.columns:
+            if col == output_col:
+                continue
             if col in self.dataset.nominal_cols:
                 distance += self._vdm_distance_sq(df_left, left[col], df_right, right[col])
             else:
@@ -136,12 +143,12 @@ class KNNClassifierModel(_KNNModel):
     """
 
     def train(self, df: pd.DataFrame, dataset: Dataset):
-        if self.dataset.task != 'classification':
-            raise Exception("Failed to predict values with KNN classifier model for dataset with unrecognized task {}".format(self.dataset.task))
+        if dataset.task != 'classification':
+            raise Exception("Failed to predict values with KNN classifier model for dataset with unrecognized task {}".format(dataset.task))
 
         super().train(df, dataset)
 
-        self.classes = df['class'].unique()
+        self.classes = self.df_train['class'].unique()
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
         if self.df_train is None or self.dataset is None:
@@ -151,11 +158,13 @@ class KNNClassifierModel(_KNNModel):
 
         for row in range(df.shape[0]):
             distances: list[tuple[float, str]] = []
-            for train_row in self.df_train.shape[0]:
+            for train_row in range(self.df_train.shape[0]):
                 x = df.iloc[row]
                 x_train = self.df_train.iloc[train_row]
                 distance = self._distance(df, x, self.df_train, x_train)
                 distances.append((distance, x_train['class']))
+            if len(distances) < self.k:
+                raise Exception("Only found {} < {} neighbors for row {}. Training set had shape {}".format(len(distances), self.k, row, self.df_train.shape))
             y_pred.iloc[row] = self._get_knn_class(distances)
 
         return y_pred
@@ -179,8 +188,8 @@ class KNNRegressionModel(_KNNModel):
     """
 
     def train(self, df: pd.DataFrame, dataset: Dataset):
-        if self.dataset.task != 'regression':
-            raise Exception("Failed to predict values with KNN regression model for dataset with unrecognized task {}".format(self.dataset.task))
+        if dataset.task != 'regression':
+            raise Exception("Failed to predict values with KNN regression model for dataset with unrecognized task {}".format(dataset.task))
 
         super().train(df, dataset)
 
@@ -211,7 +220,8 @@ class KNNRegressionModel(_KNNModel):
         """
         Compute K(x, x_q) = exp[-γ ||x - x_q||_2] for use in the kernel smoother.
         """
-        return math.exp(-self.γ * super()._distance(df, row, self.df_train, row_train))
+        l2_norm = self._distance(df, df.iloc[row], self.df_train, self.df_train.iloc[row_train])
+        return math.exp(-self.γ * l2_norm)
 
 
 class EditedKNNClassifierModel(KNNClassifierModel):
@@ -244,7 +254,7 @@ class EditedKNNClassifierModel(KNNClassifierModel):
 
         iterations = 0
         prev_val_accuracy = 0
-        prev_df_train = None
+        prev_df_train = self.df_train.copy()
         while iterations < self.max_iterations:
             validation_model = KNNClassifierModel(1)
             validation_model.train(self.df_train, self.dataset)
@@ -255,14 +265,19 @@ class EditedKNNClassifierModel(KNNClassifierModel):
             incorrectly_classified = self.df_train.loc[
                 self.df_train['prediction'] != self.df_train['class']
             ]
-            self.df_train = incorrectly_classified
-            self.df_train.drop(columns=['prediction'], inplace=True)
+            if incorrectly_classified.shape[0] == 0:
+                # If this iteration would remove all remaining rows of the training set,
+                # revert to the previous training set and stop editing.
+                self.df_train = prev_df_train
+                return
+
+            self.df_train = incorrectly_classified.drop('prediction', axis=1)
 
             # Stop editing if performance on the validation set starts to degrade.
-            df_val['predicted'] = self.predict(df_val)
+            self.df_val['predicted'] = self.predict(self.df_val)
             val_accuracy = compute_metrics(
-                actual=df_val['class'].to_numpy(),
-                predicted=df_val['predicted'].to_numpy(),
+                actual=self.df_val['class'].to_numpy(),
+                predicted=self.df_val['predicted'].to_numpy(),
                 metrics=['acc'],
             )[0]
             if val_accuracy < prev_val_accuracy:
@@ -304,7 +319,7 @@ class EditedKNNRegressionModel(KNNRegressionModel):
 
         iterations = 0
         prev_val_mse = np.inf
-        prev_df_train = None
+        prev_df_train = self.df_train.copy()
         while iterations < self.max_iterations:
             validation_model = KNNRegressionModel(1)
             validation_model.train(self.df_train, self.dataset)
@@ -315,20 +330,130 @@ class EditedKNNRegressionModel(KNNRegressionModel):
             incorrectly_classified = self.df_train.loc[
                 np.abs(self.df_train['prediction'] - self.df_train['output']) > self.ϵ
             ]
-            self.df_train = incorrectly_classified
-            self.df_train.drop(columns=['prediction'], inplace=True)
+            if incorrectly_classified.shape[0] == 0:
+                # If this iteration would remove all remaining rows of the training set,
+                # revert to the previous training set and stop editing.
+                self.df_train = prev_df_train
+                return
+
+            self.df_train = incorrectly_classified.drop('prediction', axis=1)
 
             # Stop editing if performance on the validation set starts to degrade.
-            df_val['predicted'] = self.predict(df_val)
+            self.df_val['predicted'] = self.predict(self.df_val)
             val_mse = compute_metrics(
-                actual=df_val['output'].to_numpy(),
-                predicted=df_val['predicted'].to_numpy(),
+                actual=self.df_val['output'].to_numpy(),
+                predicted=self.df_val['predicted'].to_numpy(),
                 metrics=['mse'],
             )[0]
+            self.df_val.drop('predicted', axis=1, inplace=True)
             if val_mse > prev_val_mse:
                 # If MSE has increased, revert to the previous training set and stop editing.
                 self.df_train = prev_df_train
                 return
 
             iterations += 1
+
+class CondensedKNNClassifierModel(KNNClassifierModel):
+    """
+    Condensed K-Nearest Neighbors Classifier Model.
+    """
+    def __init__(self, k: int, max_iterations: int = 5):
+        """
+        :param k: int, Number of nearest neighbors to consider
+        :param max_iterations: int, Maximum number of iterations to run the condensed KNN algorithm
+        """
+        super().__init__(k)
+        self.max_iterations = max_iterations
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        super().train(df, dataset)
+
+        self._condense_training_set()
+
+    def _condense_training_set(self):
+        """
+        Condensed KNN algorithm:
+            1. Add the first data point from the training set into the condensed set.
+            2. Consider the remaining data points in the training set individually.
+            3. For each data point, attempt to predict its value using the condensed set via 1-nn.
+            4. If the prediction is incorrect, add the data point to the condensed set. Otherwise, move on to the next data point.
+            5. Make multiple passes through the data in the training set that has not been added until the condensed set stops changing.
+        """
+
+        iterations = 0
+
+        condensed_set = self.df_train.iloc[[0]]
+        self.df_train.drop(0, inplace=True)
+        while iterations < self.max_iterations:
+            condensed_model = KNNClassifierModel(1)
+            condensed_model.train(condensed_set, self.dataset)
+            self.df_train['prediction'] = condensed_model.predict(self.df_train)
+            incorrectly_classified = self.df_train.loc[
+                self.df_train['prediction'] != self.df_train['class']
+            ].drop('prediction', axis=1)
+            prev_condensed_set_size = condensed_set.shape[0]
+            condensed_set = pd.concat([condensed_set, incorrectly_classified])
+            condensed_set.drop_duplicates(inplace=True)
+            if condensed_set.shape[0] == prev_condensed_set_size:
+                # If the condensed set has stopped changing, stop condensing.
+                self.df_train = condensed_set
+                return
+
+            self.df_train = self.df_train.loc[
+                self.df_train['prediction'] == self.df_train['class']
+            ].drop('prediction', axis=1)
+        self.df_train = condensed_set
+
+class CondensedKNNRegressionModel(KNNRegressionModel):
+    """
+    Condensed K-Nearest Neighbors Regression Model.
+    """
+    def __init__(self, k: int, ϵ: float, max_iterations: int = 5):
+        """
+        :param k: int, Number of nearest neighbors to consider
+        :param ϵ: float, Tolerance for determining if a data point is correctly predicted
+        :param max_iterations: int, Maximum number of iterations to run the condensed KNN algorithm
+        """
+        super().__init__(k)
+        self.ϵ = ϵ
+        self.max_iterations = max_iterations
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        super().train(df, dataset)
+
+        self._condense_training_set()
+
+    def _condense_training_set(self):
+        """
+        Condensed KNN algorithm:
+            1. Add the first data point from the training set into the condensed set.
+            2. Consider the remaining data points in the training set individually.
+            3. For each data point, attempt to predict its value using the condensed set via 1-nn.
+            4. If the prediction is incorrect, add the data point to the condensed set. Otherwise, move on to the next data point.
+            5. Make multiple passes through the data in the training set that has not been added until the condensed set stops changing.
+        """
+
+        iterations = 0
+
+        condensed_set = self.df_train.iloc[[0]]
+        self.df_train.drop(0, inplace=True)
+        while iterations < self.max_iterations:
+            condensed_model = KNNRegressionModel(1)
+            condensed_model.train(condensed_set, self.dataset)
+            self.df_train['prediction'] = condensed_model.predict(self.df_train)
+            incorrectly_classified = self.df_train.loc[
+                np.abs(self.df_train['prediction'] - self.df_train['output']) > self.ϵ
+            ].drop('prediction', axis=1)
+            prev_condensed_set_size = condensed_set.shape[0]
+            condensed_set = pd.concat([condensed_set, incorrectly_classified])
+            condensed_set.drop_duplicates(inplace=True)
+            if condensed_set.shape[0] == prev_condensed_set_size:
+                # If the condensed set has stopped changing, stop condensing.
+                self.df_train = condensed_set
+                return
+
+            self.df_train = self.df_train.loc[
+                np.abs(self.df_train['prediction'] - self.df_train['output']) <= self.ϵ
+            ].drop('prediction', axis=1)
+        self.df_train = condensed_set
 
