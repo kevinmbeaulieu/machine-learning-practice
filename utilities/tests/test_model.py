@@ -2,7 +2,7 @@ from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 import pandas as pd
 import unittest
 
-from utilities.model import NullModel, KNNClassifierModel, KNNRegressionModel, EditedKNNClassifierModel, EditedKNNRegressionModel, CondensedKNNClassifierModel, CondensedKNNRegressionModel
+from utilities.model import NullModel, KNNModel, EditedKNNModel, CondensedKNNModel
 from utilities.preprocessing.dataset import Dataset
 
 class TestNullModel(unittest.TestCase):
@@ -52,8 +52,8 @@ class TestNullModel(unittest.TestCase):
 
         pd.testing.assert_series_equal(expected, got)
 
-class TestKNNClassifierModel(unittest.TestCase):
-    def test_predict(self):
+class TestKNNModel(unittest.TestCase):
+    def test_predict_classification(self):
         df_train = pd.DataFrame({
             'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
             'shape': [2, 3, 2, 7, 6, 6, 3, 5, 3],
@@ -70,7 +70,7 @@ class TestKNNClassifierModel(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = KNNClassifierModel(k=3)
+        model = KNNModel(k=3)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -81,37 +81,36 @@ class TestKNNClassifierModel(unittest.TestCase):
 
         pd.testing.assert_series_equal(expected, got)
 
-class TestKNNRegressionModel(unittest.TestCase):
-   def test_predict(self):
-       df_train = pd.DataFrame({
-           'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
-           'shape': [2, 3, 2, 7, 6, 6, 3, 5, 3],
-           'output': [1, 2, 3, 4, 5, 6, 7, 8, 9],
-       })
-       df_test = pd.DataFrame({
-           'size': [1, 2, 4, 5, 7, 8],
-           'shape': [7, 1, 1, 7, 2, 5],
-       })
-       dataset = Dataset(
-           name='test',
-           task='regression',
-           file_path='fake.csv',
-           col_names=['size', 'shape', 'output'],
-       )
+    def test_predict_regression(self):
+        df_train = pd.DataFrame({
+            'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
+            'shape': [2, 3, 2, 7, 6, 6, 3, 5, 3],
+            'output': [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        })
+        df_test = pd.DataFrame({
+            'size': [1, 2, 4, 5, 7, 8],
+            'shape': [7, 1, 1, 7, 2, 5],
+        })
+        dataset = Dataset(
+            name='test',
+            task='regression',
+            file_path='fake.csv',
+            col_names=['size', 'shape', 'output'],
+        )
 
-       model = KNNRegressionModel(k=3)
-       model.train(df_train, dataset)
-       got = model.predict(df_test).reset_index(drop=True)
+        model = KNNModel(k=3)
+        model.train(df_train, dataset)
+        got = model.predict(df_test).reset_index(drop=True)
 
-       # Use sklearn to get the expected values
-       sklearn_model = KNeighborsRegressor(n_neighbors=3, algorithm='brute', p=2)
-       sklearn_model.fit(df_train[['size', 'shape']], df_train['output'])
-       expected = pd.Series(sklearn_model.predict(df_test))
+        # Use sklearn to get the expected values
+        sklearn_model = KNeighborsRegressor(n_neighbors=3, algorithm='brute', p=2)
+        sklearn_model.fit(df_train[['size', 'shape']], df_train['output'])
+        expected = pd.Series(sklearn_model.predict(df_test))
 
-       pd.testing.assert_series_equal(expected, got)
+        pd.testing.assert_series_equal(expected, got)
 
-class TestEditedKNNClassifierModel(unittest.TestCase):
-    def test_predict(self):
+class TestEditedKNNModel(unittest.TestCase):
+    def test_predict_classification(self):
         df_train = pd.DataFrame({
             'size': [1, 4, 2, 4, 6, 8],
             'shape': [2, 2, 7, 6, 3, 3],
@@ -133,7 +132,7 @@ class TestEditedKNNClassifierModel(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = EditedKNNClassifierModel(k=3, df_val=df_val)
+        model = EditedKNNModel(k=3, df_val=df_val)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -144,8 +143,7 @@ class TestEditedKNNClassifierModel(unittest.TestCase):
 
         pd.testing.assert_series_equal(expected, got)
 
-class TestEditedKNNRegressionModel(unittest.TestCase):
-    def test_predict(self):
+    def test_predict_regression(self):
          df_train = pd.DataFrame({
               'size': [1, 4, 2, 4, 6, 8],
               'shape': [2, 2, 7, 6, 3, 3],
@@ -167,7 +165,7 @@ class TestEditedKNNRegressionModel(unittest.TestCase):
               col_names=['size', 'shape', 'output'],
          )
 
-         model = EditedKNNRegressionModel(k=3, ε=0.1, df_val=df_val)
+         model = EditedKNNModel(k=3, ε=0.1, df_val=df_val)
          model.train(df_train, dataset)
          got = model.predict(df_test).reset_index(drop=True)
 
@@ -178,8 +176,8 @@ class TestEditedKNNRegressionModel(unittest.TestCase):
 
          pd.testing.assert_series_equal(expected, got)
 
-class TestCondensedKNNClassifierModel(unittest.TestCase):
-    def test_predict(self):
+class TestCondensedKNNModel(unittest.TestCase):
+    def test_predict_classification(self):
         df_train = pd.DataFrame({
             'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
             'shape': [2, 3, 2, 7, 6, 6, 3, 5, 3],
@@ -196,7 +194,7 @@ class TestCondensedKNNClassifierModel(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = CondensedKNNClassifierModel(k=3)
+        model = CondensedKNNModel(k=3)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -207,8 +205,7 @@ class TestCondensedKNNClassifierModel(unittest.TestCase):
 
         pd.testing.assert_series_equal(expected, got)
 
-class TestCondensedKNNRegressionModel(unittest.TestCase):
-    def test_predict(self):
+    def test_predict_regression(self):
          df_train = pd.DataFrame({
               'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
               'shape': [2, 3, 2, 7, 6, 6, 3, 5, 3],
@@ -225,7 +222,7 @@ class TestCondensedKNNRegressionModel(unittest.TestCase):
               col_names=['size', 'shape', 'output'],
          )
 
-         model = CondensedKNNRegressionModel(k=3, ε=0.1)
+         model = CondensedKNNModel(k=3, ε=0.1)
          model.train(df_train, dataset)
          got = model.predict(df_test).reset_index(drop=True)
 
