@@ -180,20 +180,14 @@ class KNNModel(_KNNModel):
             K(x, x_t) = exp[-γ ||x - x_t||_2]
             ||a - b||_2 = Euclidean distance between a and b
         """
+        distances = [self._distance(df, x, self.df_train, x_train) for _, x_train in self.df_train.iterrows()]
+        k_nearest_distances = np.sort(distances)[:self.k]
+        k_nearest_neighbors = self.df_train.iloc[np.argsort(distances)[:self.k]]
         numerator = np.sum(
-            [self._gaussian_kernel(df, x, x_train) * x_train['output'] for _, x_train in self.df_train.iterrows()]
+            [np.exp(-self.γ * d) * y for d, y in zip(k_nearest_distances, k_nearest_neighbors['output'])]
         )
-        denominator = np.sum(
-            [self._gaussian_kernel(df, x, x_train) for _, x_train in self.df_train.iterrows()]
-        )
+        denominator = np.sum([np.exp(-self.γ * d) for d in k_nearest_distances])
         return numerator / denominator
-
-    def _gaussian_kernel(self, df: pd.DataFrame, x: pd.Series, x_train: pd.Series) -> float:
-        """
-        Compute K(x, x_q) = exp[-γ ||x - x_q||_2] for use in the kernel smoother.
-        """
-        l2_norm = self._distance(df, x, self.df_train, x_train)
-        return math.exp(-self.γ * l2_norm)
 
 
 class EditedKNNModel(KNNModel):
@@ -233,6 +227,7 @@ class EditedKNNModel(KNNModel):
             validation_model = KNNModel(1)
             validation_model.train(self.df_train, self.dataset)
 
+            # TODO: Omit each data point when predicting its own class
             self.df_train['prediction'] = validation_model.predict(self.df_train)
 
             # Remove all rows in the training set that are correctly classified by
