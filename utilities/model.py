@@ -372,3 +372,143 @@ class CondensedKNNModel(KNNModel):
         validation_model = KNNModel(1)
         validation_model.train(condensed_set, self.dataset)
         return validation_model.predict(df_x).iloc[0]
+
+class UnivariateDecisionTreeModel(Model):
+    """
+    Univariate Decision Tree Model.
+    """
+    def __init__(self, pruning_strategy=None, leaf_size: float = 0):
+        """
+        :param pruning_strategy: str|None, Pruning strategy to use (None, 'pre-prune', 'post-prune')
+        :param leaf_size: float, For pre-pruning, minimum number of examples in a leaf node as
+            a percentage of the total number of training examples
+        """
+        self.pruning_strategy = pruning_strategy
+        self.leaf_size = leaf_size
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
+        self.dataset = dataset
+        self.df_train = df
+        self._build_tree()
+        if pruning_strategy == 'post-prune':
+            self._post_prune_tree()
+        raise Exception("Not yet implemented")
+
+    def predict(self) -> pd.Series:
+        raise Exception("Not yet implemented")
+
+    def _build_tree(self):
+        raise Exception("Not yet implemented")
+
+    def _select_attribute(self) -> str:
+        for attribute in self.dataset.col_names:
+            if attribute in self.dataset.ignore_cols:
+                continue
+
+            node = _build_node(attribute)
+        raise Exception("Not yet implemented")
+
+    def _build_node(self, attribute: str) -> Node:
+        if attribute in self.dataset.nominal_cols:
+            node = NominalNode(attribute)
+            attribute_values = self.df_train[attribute].unique()
+            for value in attribute_values:
+                matching_examples = self.df_train[self.df_train[attribute] == value]
+                leaf = LeafNode(matching_examples)
+                node.add_child(value, leaf)
+        else:
+            threshold = 0
+            return NumericNode(attribute, threshold)
+
+    def _post_prune_tree(self):
+        raise Exception("Not yet implemented")
+
+    class Node:
+        """
+        Abstract node class for decision tree.
+        """
+        def __init__(self, examples: pd.DataFrame, dataset: Dataset):
+            """
+            :param examples: pd.DataFrame, Training examples reaching this node
+            :param dataset: Dataset, Dataset these examples belong to
+            """
+            self.examples = examples
+            self.dataset = dataset
+            self.children = {}
+
+    class NominalNode(Node):
+        """
+        Node splitting on a nominal attribute in a decision tree.
+        """
+        def __init__(self, attribute: str, examples: pd.DataFrame, dataset: Dataset):
+            """
+            :param attribute: str, Attribute to split on
+            :param examples: pd.DataFrame, Training examples reaching this node
+            :param dataset: Dataset, Dataset these examples belong to
+            """
+            self.attribute = attribute
+            super().__init__(examples, dataset)
+
+    class NumericalNode(Node):
+        """
+        Node splitting on a numerical attribute in a decision tree.
+        """
+        def __init__(self, attribute: str, threshold: float, examples: pd.DataFrame, dataset: Dataset):
+            """
+            :param attribute: str, Attribute to split on
+            :param threshold: float, Threshold value to split on
+            :param examples: pd.DataFrame, Training examples reaching this node
+            :param dataset: Dataset, Dataset these examples belong to
+            """
+            self.attribute = attribute
+            self.threshold = threshold
+
+            super().__init__(examples, dataset)
+
+            attribute_values = self.examples[attribute].unique()
+            for value in attribute_values
+                matching_examples = self.examples[self.examples[attribute] == value]
+                leaf = LeafNode(matching_examples)
+                self.children[class_] = leaf
+
+    class LeafNode(Node):
+        """
+        Leaf node in a decision tree.
+        """
+        def __init__(self, examples: pd.DataFrame, dataset: Dataset):
+            """
+            :param examples: pd.DataFrame, Examples in the leaf node
+            :param dataset: Dataset, Dataset the examples belong to
+            """
+            super().__init__(examples, dataset)
+
+        def predict(self) -> any:
+            if self.dataset.task == 'classification':
+                # Predict the most common class amongst examples
+                return self.examples['class'].value_counts().index[0]
+            elif self.dataset.task == 'regression':
+                # Predict the average output amongst examples
+                return self.examples['output'].mean()
+            else:
+                raise Exception("Failed to predict for dataset with unrecognized task {}".format(self.dataset.task))
+
+        def entropy(self) -> float:
+            """
+            Calculate the entropy of the examples in the leaf node for a classification task.
+            """
+            classes = self.examples['class'].unique()
+            return np.sum([self._entropy_for_class(c) for c in classes])
+
+        def _entropy_for_class(self, c: str) -> float:
+            Nc = self.examples[self.examples['class'] == c].shape[0]
+            N = self.examples.shape[0]
+            pc = Nc / N
+            return -pc * np.log2(pc)
+
+        def mean_squared_error(self) -> float:
+            """
+            Calculate the mean squared error of the examples in the leaf node for a regression task.
+            """
+            prediction = self.predict()
+            return np.mean((self.examples['output'] - self.predict())**2)
+
