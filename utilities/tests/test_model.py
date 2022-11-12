@@ -7,7 +7,7 @@ from utilities.model import (
     KNNModel,
     EditedKNNModel,
     CondensedKNNModel,
-    UnivariateDecisionTreeModel,
+    DecisionTreeModel,
 )
 from utilities.preprocessing.dataset import Dataset
 
@@ -164,7 +164,7 @@ class TestCondensedKNNModel(unittest.TestCase):
         })
         pd.testing.assert_frame_equal(expected, got)
 
-class TestUnivariateDecisionTree(unittest.TestCase):
+class TestDecisionTree(unittest.TestCase):
     def test_predict_classification(self):
         df_train = pd.DataFrame({
             'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
@@ -182,7 +182,7 @@ class TestUnivariateDecisionTree(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = UnivariateDecisionTreeModel(pruning_strategy=None)
+        model = DecisionTreeModel(pruning_strategy=None)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -207,7 +207,7 @@ class TestUnivariateDecisionTree(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = UnivariateDecisionTreeModel(pruning_strategy='pre-prune')
+        model = DecisionTreeModel(pruning_strategy='pre-prune')
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -237,7 +237,7 @@ class TestUnivariateDecisionTree(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = UnivariateDecisionTreeModel(pruning_strategy='post-prune', post_pruning_set=df_val)
+        model = DecisionTreeModel(pruning_strategy='post-prune', post_pruning_set=df_val)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -262,7 +262,7 @@ class TestUnivariateDecisionTree(unittest.TestCase):
             col_names=['size', 'shape', 'output'],
         )
 
-        model = UnivariateDecisionTreeModel(
+        model = DecisionTreeModel(
             pruning_strategy=None,
             leaf_size = 0.34,
         )

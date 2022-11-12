@@ -373,9 +373,9 @@ class CondensedKNNModel(KNNModel):
         validation_model.train(condensed_set, self.dataset)
         return validation_model.predict(df_x).iloc[0]
 
-class UnivariateDecisionTreeModel(Model):
+class DecisionTreeModel(Model):
     """
-    Univariate Decision Tree Model.
+    Decision Tree Model.
     """
     def __init__(
         self,
@@ -469,7 +469,6 @@ class UnivariateDecisionTreeModel(Model):
             ]
 
         return entropy - sum(weighted_child_entropies)
-
 
     def _entropy(self, df: pd.DataFrame) -> float:
         """
