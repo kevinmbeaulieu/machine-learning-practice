@@ -386,8 +386,8 @@ class UnivariateDecisionTreeModel(Model):
     ):
         """
         :param pruning_strategy: str|None, Pruning strategy to use (None, 'pre-prune', 'post-prune')
-        :param leaf_size: float, For pre-pruning, minimum number of examples in a leaf node as
-            a percentage of the total number of training examples
+        :param leaf_size: float, For pre-pruning or regression, minimum number of examples in a
+            leaf node as a percentage of the total number of training examples
         :param post_pruning_set: pd.DataFrame, For post-pruning, validation set to use
         :param ε: float, Tolerance used for determining whether a node is pure
         """
@@ -533,7 +533,7 @@ class UnivariateDecisionTreeModel(Model):
 
         :return Node, Root of subtree
         """
-        if attribute is None or (self.pruning_strategy == 'pre-prune' and examples.shape[0] < self.leaf_size * self.df_train.shape[0]):
+        if attribute is None or ((self.pruning_strategy == 'pre-prune' or self.dataset.task == 'regression') and examples.shape[0] < self.leaf_size * self.df_train.shape[0]):
             return self.LeafNode(examples, self.dataset)
 
         if attribute in self.dataset.nominal_cols:

@@ -246,5 +246,28 @@ class TestUnivariateDecisionTree(unittest.TestCase):
         pd.testing.assert_series_equal(expected, got)
 
     def test_predict_regression(self):
-        # TODO: Test regression on decision tree 
-        pass
+        df_train = pd.DataFrame({
+            'size': [1, 2, 4, 2, 3, 4, 6, 6, 8],
+            'shape': [2, 3, 2, 7, 6, 6, 3, 5, 3],
+            'output': [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        })
+        df_test = pd.DataFrame({
+            'size': [1, 2, 4, 5, 7, 8],
+            'shape': [7, 1, 1, 7, 2, 5],
+        })
+        dataset = Dataset(
+            name='test',
+            task='regression',
+            file_path='fake.csv',
+            col_names=['size', 'shape', 'output'],
+        )
+
+        model = UnivariateDecisionTreeModel(
+            pruning_strategy=None,
+            leaf_size = 0.34,
+        )
+        model.train(df_train, dataset)
+        got = model.predict(df_test).reset_index(drop=True)
+
+        expected = pd.Series([5.0, 2.0, 2.0, 5.0, 8.0, 8.0])
+        pd.testing.assert_series_equal(expected, got, atol=0.001)
