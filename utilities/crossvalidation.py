@@ -4,8 +4,8 @@ from typing import Callable
 import pandas as pd
 import random
 
+from .models.model import Model
 from .preprocessing.dataset import Dataset
-from .model import Model
 from .preprocessing import featurescaling
 
 def split_for_cross_validation(
