@@ -5,10 +5,121 @@ from .model import Model
 from utilities.preprocessing.dataset import Dataset
 from utilities import metrics
 
+class Node:
+    """
+    Abstract node class for decision tree.
+    """
+
+    def __init__(self, examples: pd.DataFrame, dataset: Dataset):
+        """
+        :param examples: pd.DataFrame, Training examples reaching this node
+        :param dataset: Dataset, Dataset these examples belong to
+        """
+        self.examples = examples
+        self.dataset = dataset
+        self.parent = None
+
+    def predict(self, x: pd.Series) -> any:
+        """
+        Predict class or output based on subtree rooted at this node.
+
+        :param x: pd.Series, Example to predict
+
+        :return str|float, Predicted class or output
+        """
+        raise Exception("Must be implemented by subclass")
+
+class NominalNode(Node):
+    """
+    Node splitting on a nominal attribute in a decision tree.
+    """
+
+    def __init__(self, attribute: str, examples: pd.DataFrame, dataset: Dataset):
+        """
+        :param attribute: str, Attribute to split on
+        :param examples: pd.DataFrame, Training examples reaching this node
+        :param dataset: Dataset, Dataset these examples belong to
+        """
+        self.attribute = attribute
+        self.children = {}
+
+        super().__init__(examples, dataset)
+
+    def predict(self, x: pd.Series) -> any:
+        return self.children[x[self.attribute]].predict(x)
+
+    def __str__(self):
+        description = "NominalNode({})".format(self.attribute)
+        for v, child in self.children.items():
+            child_description = str(child).replace("\n", "\n\t")
+            description += "\n\t{}: {}".format(v, child_description)
+        return description
+
+class NumericalNode(Node):
+    """
+    Node splitting on a numerical attribute in a decision tree.
+    """
+
+    def __init__(self, attribute: str, threshold: float, examples: pd.DataFrame, dataset: Dataset):
+        """
+        :param attribute: str, Attribute to split on
+        :param threshold: float, Threshold to split on
+        :param examples: pd.DataFrame, Training examples reaching this node
+        :param dataset: Dataset, Dataset these examples belong to
+        """
+        self.attribute = attribute
+        self.threshold = threshold
+        self.left_child = None
+        self.right_child = None
+
+        super().__init__(examples, dataset)
+
+    def predict(self, x: pd.Series) -> any:
+        child = self.left_child if x[self.attribute] <= self.threshold else self.right_child
+        return child.predict(x)
+
+    def __str__(self):
+        description = "NumericalNode({}<={})".format(self.attribute, self.threshold)
+        if self.left_child is not None:
+            description += "\n\tLeft: {}".format(str(self.left_child).replace("\n", "\n\t"))
+        if self.right_child is not None:
+            description += "\n\tRight: {}".format(str(self.right_child).replace("\n", "\n\t"))
+        return description
+
+class LeafNode(Node):
+    """
+    Leaf node in a decision tree.
+    """
+
+    def __init__(self, examples: pd.DataFrame, dataset: Dataset):
+        """
+        :param examples: pd.DataFrame, Examples in the leaf node
+        :param dataset: Dataset, Dataset the examples belong to
+        """
+        super().__init__(examples, dataset)
+
+        if self.dataset.task == 'classification':
+            # Predict the most common class amongst examples
+            self.predict_value = self.examples['class'].value_counts().index[0]
+        elif self.dataset.task == 'regression':
+            # Predict the average output amongst examples
+            self.predict_value = self.examples['output'].mean()
+
+    def predict(self, x: pd.Series) -> any:
+        return self.predict_value
+
+    def __str__(self):
+        description = "LeafNode({})".format(self.predict_value)
+        output_col = 'class' if self.dataset.task == 'classification' else 'output'
+        description += "\n\tExamples: {}".format(self.examples[output_col].values)
+        return description
+
+
 class DecisionTreeModel(Model):
     """
     Decision Tree Model.
     """
+
     def __init__(
         self,
         pruning_strategy: str = None,
@@ -20,7 +131,7 @@ class DecisionTreeModel(Model):
         :param pruning_strategy: str|None, Pruning strategy to use (None, 'pre-prune', 'post-prune')
         :param leaf_size: float, For pre-pruning or regression, minimum number of examples in a
             leaf node as a percentage of the total number of training examples
-        :param post_pruning_set: pd.DataFrame, For post-pruning, validation set to use
+        :param post_pruning_set: pd.DataFrame, Validation set to use for post-pruning
         :param ε: float, Tolerance used for determining whether a node is pure
         """
         self.pruning_strategy = pruning_strategy
@@ -268,108 +379,60 @@ class DecisionTreeModel(Model):
 
             return leaf_alternative if pruned_mse <= val_mse else node
 
-class Node:
+class RandomForestModel(Model):
     """
-    Abstract node class for decision tree.
+    Random Forest Model.
     """
-    def __init__(self, examples: pd.DataFrame, dataset: Dataset):
+
+    def __init__(
+        self,
+        num_trees: int = 10,
+        num_samples: float = 0.5,
+        pruning_strategy: str = None,
+        leaf_size: float = 0,
+        post_pruning_set: pd.DataFrame = None,
+        ε: float = 0.001,
+    ):
         """
-        :param examples: pd.DataFrame, Training examples reaching this node
-        :param dataset: Dataset, Dataset these examples belong to
+        :param num_trees: int, Number of trees in forest
+        :param num_samples: float, Number of samples to use for each tree, expressed as a proportion of the total training set size
+        :param pruning_strategy: str, Pruning strategy to use
+        :param leaf_size: float, Minimum proportion of examples in a leaf node
+        :param post_pruning_set: pd.DataFrame, Validation set to use for post-pruning
+        :param ε: float, Minimum proportion of examples in a leaf node
         """
-        self.examples = examples
+        self.num_trees = num_trees
+        self.num_samples = num_samples
+        self.pruning_strategy = pruning_strategy
+        self.leaf_size = leaf_size
+        self.post_pruning_set = post_pruning_set
+        self.ε = ε
+
+    def train(self, df: pd.DataFrame, dataset: Dataset):
         self.dataset = dataset
-        self.parent = None
+        self.trees = []
 
-    def predict(self, x: pd.Series) -> any:
-        """
-        Predict class or output based on subtree rooted at this node.
+        for _ in range(self.num_trees):
+            tree = DecisionTreeModel(
+                pruning_strategy=self.pruning_strategy,
+                leaf_size=self.leaf_size,
+                post_pruning_set=self.post_pruning_set,
+                ε=self.ε
+            )
+            df_train = df.sample(frac=self.num_samples, replace=True)
+            tree.train(df_train, dataset)
+            self.trees.append(tree)
 
-        :param x: pd.Series, Example to predict
-
-        :return str|float, Predicted class or output
-        """
-        raise Exception("Must be implemented by subclass")
-
-class NominalNode(Node):
-    """
-    Node splitting on a nominal attribute in a decision tree.
-    """
-    def __init__(self, attribute: str, examples: pd.DataFrame, dataset: Dataset):
-        """
-        :param attribute: str, Attribute to split on
-        :param examples: pd.DataFrame, Training examples reaching this node
-        :param dataset: Dataset, Dataset these examples belong to
-        """
-        self.attribute = attribute
-        self.children = {}
-
-        super().__init__(examples, dataset)
-
-    def predict(self, x: pd.Series) -> any:
-        return self.children[x[self.attribute]].predict(x)
-
-    def __str__(self):
-        description = "NominalNode({})".format(self.attribute)
-        for v, child in self.children.items():
-            child_description = str(child).replace("\n", "\n\t")
-            description += "\n\t{}: {}".format(v, child_description)
-        return description
-
-class NumericalNode(Node):
-    """
-    Node splitting on a numerical attribute in a decision tree.
-    """
-    def __init__(self, attribute: str, threshold: float, examples: pd.DataFrame, dataset: Dataset):
-        """
-        :param attribute: str, Attribute to split on
-        :param threshold: float, Threshold to split on
-        :param examples: pd.DataFrame, Training examples reaching this node
-        :param dataset: Dataset, Dataset these examples belong to
-        """
-        self.attribute = attribute
-        self.threshold = threshold
-        self.left_child = None
-        self.right_child = None
-
-        super().__init__(examples, dataset)
-
-    def predict(self, x: pd.Series) -> any:
-        child = self.left_child if x[self.attribute] <= self.threshold else self.right_child
-        return child.predict(x)
-
-    def __str__(self):
-        description = "NumericalNode({}<={})".format(self.attribute, self.threshold)
-        if self.left_child is not None:
-            description += "\n\tLeft: {}".format(str(self.left_child).replace("\n", "\n\t"))
-        if self.right_child is not None:
-            description += "\n\tRight: {}".format(str(self.right_child).replace("\n", "\n\t"))
-        return description
-
-class LeafNode(Node):
-    """
-    Leaf node in a decision tree.
-    """
-    def __init__(self, examples: pd.DataFrame, dataset: Dataset):
-        """
-        :param examples: pd.DataFrame, Examples in the leaf node
-        :param dataset: Dataset, Dataset the examples belong to
-        """
-        super().__init__(examples, dataset)
-
+    def predict(self, df: pd.DataFrame) -> pd.Series:
+        predictions = pd.DataFrame(
+            [tree.predict(df) for tree in self.trees]
+        )
         if self.dataset.task == 'classification':
-            # Predict the most common class amongst examples
-            self.predict_value = self.examples['class'].value_counts().index[0]
+            modes = predictions.mode(axis=0)
+            result = modes.iloc[0] # If there's a tie for any prediction, just pick the first one
+            result.name = None # Remove the index name as an implementation detail
+            return result
         elif self.dataset.task == 'regression':
-            # Predict the average output amongst examples
-            self.predict_value = self.examples['output'].mean()
-
-    def predict(self, x: pd.Series) -> any:
-        return self.predict_value
-
-    def __str__(self):
-        description = "LeafNode({})".format(self.predict_value)
-        output_col = 'class' if self.dataset.task == 'classification' else 'output'
-        description += "\n\tExamples: {}".format(self.examples[output_col].values)
-        return description
-
+            return predictions.mean(axis=0)
+        else:
+            raise Exception("Failed to predict for dataset with unrecognized task {}".format(self.dataset.task))

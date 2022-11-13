@@ -9,6 +9,7 @@ class _KNNModel(Model):
     """
     Abstract parent class for K-Nearest Neighbors models.
     """
+
     def __init__(self, k: int):
         """
         :param k: int, Number of nearest neighbors to use for prediction
@@ -141,6 +142,7 @@ class EditedKNNModel(KNNModel):
     """
     Edited K-Nearest Neighbors Model.
     """
+
     def __init__(self, k: int, df_val: pd.DataFrame, ε: float = 0, max_iterations: int = 5):
         """
         :param k: int, Number of nearest neighbors to consider
@@ -246,6 +248,7 @@ class CondensedKNNModel(KNNModel):
     """
     Condensed K-Nearest Neighbors Model.
     """
+
     def __init__(self, k: int, ε: float = 0, max_iterations: int = 5):
         """
         :param k: int, Number of nearest neighbors to consider
