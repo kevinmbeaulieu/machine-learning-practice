@@ -1,6 +1,6 @@
 import pandas as pd
 
-from utilities.preprocessing.dataset import Dataset
+from .dataset import Dataset
 
 def standardize(df_train: pd.DataFrame, df_test: pd.DataFrame, col_name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """

@@ -3,8 +3,8 @@ import numpy as np
 import statistics
 import pandas as pd
 
-from utilities.metrics import compute_metrics
-from utilities.preprocessing.dataset import Dataset
+from .metrics import compute_metrics
+from .preprocessing.dataset import Dataset
 
 class Model:
     """

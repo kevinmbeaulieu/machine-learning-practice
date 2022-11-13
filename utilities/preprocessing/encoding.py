@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import sklearn
 
-from utilities.preprocessing.dataset import Dataset
+from .dataset import Dataset
 
 def encode_categorical_data(df: pd.DataFrame, dataset: Dataset) -> pd.DataFrame:
     """

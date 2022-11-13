@@ -1,6 +1,6 @@
 import pandas as pd
 
-from utilities.preprocessing.dataset import Dataset
+from .dataset import Dataset
 
 def impute_missing_values(df: pd.DataFrame, dataset: Dataset) -> pd.DataFrame:
     """

@@ -1,8 +1,8 @@
 import pandas as pd
 
-from utilities.preprocessing.dataset import Dataset
-from utilities.preprocessing.imputation import impute_missing_values
-from utilities.preprocessing import encoding
+from .dataset import Dataset
+from .imputation import impute_missing_values
+import encoding
 
 def preprocess_data(
     dfs: dict[str, pd.DataFrame],
