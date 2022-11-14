@@ -428,7 +428,7 @@ class RandomForestModel(Model):
     def predict(self, df: pd.DataFrame) -> pd.Series:
         with Pool(self.num_processes) as pool:
             predictions = pool.starmap(
-                self._predict_tree,
+                DecisionTreeModel.predict,
                 [(tree, df) for tree in self.trees],
             )
         predictions = pd.DataFrame(predictions)
@@ -452,6 +452,3 @@ class RandomForestModel(Model):
         )
         tree.train(df_sample, self.dataset)
         return tree
-
-    def _predict_tree(self, tree: DecisionTreeModel, df: pd.DataFrame) -> pd.Series:
-        return tree.predict(df)
