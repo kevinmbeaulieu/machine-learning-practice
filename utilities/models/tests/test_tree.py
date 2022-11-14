@@ -134,7 +134,7 @@ class TestRandomForestModel(unittest.TestCase):
 
         np.random.seed(1234)
 
-        model = RandomForestModel(pruning_strategy=None)
+        model = RandomForestModel(num_trees=10, pruning_strategy=None)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
@@ -165,7 +165,7 @@ class TestRandomForestModel(unittest.TestCase):
 
         np.random.seed(1234)
 
-        model = RandomForestModel(pruning_strategy=None, leaf_size = 0.34)
+        model = RandomForestModel(num_trees=10, pruning_strategy=None, leaf_size = 0.34)
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 

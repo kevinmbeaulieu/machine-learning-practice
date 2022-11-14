@@ -388,7 +388,7 @@ class RandomForestModel(Model):
 
     def __init__(
         self,
-        num_trees: int = 10,
+        num_trees: int = 100,
         num_samples: float = 0.5,
         pruning_strategy: str = None,
         leaf_size: float = 0,
