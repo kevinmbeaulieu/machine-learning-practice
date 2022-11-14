@@ -1,7 +1,7 @@
 import pandas as pd
 import unittest
 
-from utilities.models.nn import NeuralNetworkModel, DenseLayer
+from utilities.models.nn import NeuralNetworkModel, InputLayer, DenseLayer
 from utilities.preprocessing.dataset import Dataset
 
 class TestNeuralNetwork(unittest.TestCase):
@@ -22,8 +22,11 @@ class TestNeuralNetwork(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = NeuralNetworkModel()
-        model.layers = [DenseLayer(2, 3), DenseLayer(3, 3, activation='softmax')]
+        model = NeuralNetworkModel(num_processes=1)
+        model.layers = [
+            InputLayer(2),
+            DenseLayer(3, activation='softmax'),
+        ]
         model.train(df_train, dataset)
         got = model.predict(df_test).reset_index(drop=True)
 
