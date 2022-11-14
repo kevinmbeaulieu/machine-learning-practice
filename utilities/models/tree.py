@@ -1,4 +1,6 @@
+from multiprocessing import Pool
 import numpy as np
+import os
 import pandas as pd
 
 from .model import Model
@@ -128,9 +130,9 @@ class DecisionTreeModel(Model):
         ε: float = 0.001
     ):
         """
-        :param pruning_strategy: str|None, Pruning strategy to use (None, 'pre-prune', 'post-prune')
-        :param leaf_size: float, For pre-pruning or regression, minimum number of examples in a
-            leaf node as a percentage of the total number of training examples
+        :param pruning_strategy: str|None, Pruning strategy to use ('pre-prune', 'post-prune',
+            or None; default None)
+        :param leaf_size: float, Minimum proportion of examples in a leaf node
         :param post_pruning_set: pd.DataFrame, Validation set to use for post-pruning
         :param ε: float, Tolerance used for determining whether a node is pure
         """
@@ -392,14 +394,19 @@ class RandomForestModel(Model):
         leaf_size: float = 0,
         post_pruning_set: pd.DataFrame = None,
         ε: float = 0.001,
+        num_processes: int = os.cpu_count(),
     ):
         """
         :param num_trees: int, Number of trees in forest
-        :param num_samples: float, Number of samples to use for each tree, expressed as a proportion of the total training set size
-        :param pruning_strategy: str, Pruning strategy to use
+        :param num_samples: float, Number of samples to use for each tree, expressed as a proportion
+            of the total training set size
+        :param pruning_strategy: str|None, Pruning strategy to use ('pre-prune', 'post-prune',
+            or None; default None)
         :param leaf_size: float, Minimum proportion of examples in a leaf node
         :param post_pruning_set: pd.DataFrame, Validation set to use for post-pruning
-        :param ε: float, Minimum proportion of examples in a leaf node
+        :param ε: float, Tolerance used for determining whether a node is pure (default 0.001)
+        :param num_processes: int, Number of processes to use for parallelization (default: number of
+            CPUs)
         """
         self.num_trees = num_trees
         self.num_samples = num_samples
@@ -407,26 +414,25 @@ class RandomForestModel(Model):
         self.leaf_size = leaf_size
         self.post_pruning_set = post_pruning_set
         self.ε = ε
+        self.num_processes = num_processes
 
     def train(self, df: pd.DataFrame, dataset: Dataset):
         self.dataset = dataset
-        self.trees = []
 
-        for _ in range(self.num_trees):
-            tree = DecisionTreeModel(
-                pruning_strategy=self.pruning_strategy,
-                leaf_size=self.leaf_size,
-                post_pruning_set=self.post_pruning_set,
-                ε=self.ε
+        with Pool(self.num_processes) as pool:
+            self.trees = pool.map(
+                self._train_tree,
+                [df.sample(frac=self.num_samples, replace=True) for _ in range(self.num_trees)],
             )
-            df_train = df.sample(frac=self.num_samples, replace=True)
-            tree.train(df_train, dataset)
-            self.trees.append(tree)
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
-        predictions = pd.DataFrame(
-            [tree.predict(df) for tree in self.trees]
-        )
+        with Pool(self.num_processes) as pool:
+            predictions = pool.starmap(
+                self._predict_tree,
+                [(tree, df) for tree in self.trees],
+            )
+        predictions = pd.DataFrame(predictions)
+
         if self.dataset.task == 'classification':
             modes = predictions.mode(axis=0)
             result = modes.iloc[0] # If there's a tie for any prediction, just pick the first one
@@ -436,3 +442,16 @@ class RandomForestModel(Model):
             return predictions.mean(axis=0)
         else:
             raise Exception("Failed to predict for dataset with unrecognized task {}".format(self.dataset.task))
+
+    def _train_tree(self, df_sample: pd.DataFrame) -> DecisionTreeModel:
+        tree = DecisionTreeModel(
+            pruning_strategy=self.pruning_strategy,
+            leaf_size=self.leaf_size,
+            post_pruning_set=self.post_pruning_set,
+            ε=self.ε
+        )
+        tree.train(df_sample, self.dataset)
+        return tree
+
+    def _predict_tree(self, tree: DecisionTreeModel, df: pd.DataFrame) -> pd.Series:
+        return tree.predict(df)
