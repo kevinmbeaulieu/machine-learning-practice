@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import unittest
 
@@ -22,9 +23,13 @@ class TestNeuralNetwork(unittest.TestCase):
             col_names=['size', 'shape', 'class'],
         )
 
-        model = NeuralNetworkModel(num_processes=1)
+        np.random.seed(1)
+
+        model = NeuralNetworkModel(batch_size=9)
         model.layers = [
             InputLayer(2),
+            DenseLayer(3, activation='sigmoid'),
+            DenseLayer(3, activation='sigmoid'),
             DenseLayer(3, activation='softmax'),
         ]
         model.train(df_train, dataset)

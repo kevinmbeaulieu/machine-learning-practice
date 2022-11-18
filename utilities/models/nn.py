@@ -22,39 +22,102 @@ class NeuralNetworkModel(Model):
         self.dataset = dataset
         self.classes = df['class'].unique()
 
-        for _ in range(self.num_epochs):
-            batch_error = 0
-            for batch in dataset.get_batches(df, self.batch_size):
-                batch_error += self._train_batch(batch)
+        print("Training for {} epochs".format(self.num_epochs))
+        for epoch in range(self.num_epochs):
+            print("Starting epoch {}...".format(epoch))
+            batches = self._get_batches(df)
+            print("  Got {} batches".format(len(batches)))
+            for batch_index, batch in enumerate(self._get_batches(df)):
+                print("  Training batch {}".format(batch_index))
+                self._train_batch(batch)
+
+    def _get_batches(self, df: pd.DataFrame) -> list[pd.DataFrame]:
+        num_batches = np.ceil(df.shape[0] / self.batch_size).astype(int)
+        print("Creating {} batches".format(num_batches))
+        return [df.sample(self.batch_size) for _ in range(num_batches)]
 
     def _train_batch(self, batch: pd.DataFrame):
-        error = 0
+        Δw = np.zeros((len(self.layers,)))
+        Δb = np.zeros((len(self.layers,)))
         for _, row in batch.iterrows():
-            error += self._train_row(row)
-        return error
+            Δw_t, Δb_t = self._train_row(row)
+            Δw += Δw_t
+            Δb += Δb_t
 
-    def _train_row(self, row: pd.Series) -> float:
-        output = row.values
+        print("Δw:", Δw)
+        print("Δb:", Δb)
+
+    def _train_row(self, row: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Train row via forward-propagation followed by back-propagation.
+
+        :param row: Training example
+        :return: Tuple of changes to weights (first element) and biases for each layer (second element)
+        """
+
+        # Notation:
+        #   row = input row t (= x^t = z_0^t)
+        #
+        #   f_i(x) = activation function of layer i
+        #   f_i'(x) = derivative of activation function of layer i
+        #
+        #   z_i^t = output of layer i for x^t
+        #         = f_i(w_i^t • z_{i-1}^t + b_i^t)
+        #   y^t = output of last layer for x^t
+        #       = z_{L-1}^t
+        #
+        #   e^t = error of last layer for x^t
+        #       = y\hat^t - y^t
+        #   e_i^t = error of layer i for x^t for i < L-1
+        #         = e_{i+1}^t • w_{i+1}^t
+        #
+        #   η = learning rate
+        #   Δw_i^t = change in weights of layer i for x^t
+        #          = η • e_i^t • f_i'(z_i^t) • z_{i-1}^t
+        #   Δw_i = change in weights of layer i for this batch
+        #        = sum(Δw_i^t)
+        #   Δb_i^t = change in biases of layer i for x^t
+        #          = η • e_i^t • f_i'(z_i^t)
+        #   Δb_i = change in biases of layer i for this batch
+        #        = sum(Δb_i^t)
+
+        output_col = 'class' if self.dataset.task == 'classification' else 'output'
+        z = []
         for layer in self.layers:
-            output = layer.forward(outputs)
+            layer_inputs = (z[-1] if z else row.drop(output_col).values).astype('float')
+            z.append(layer.forward(layer_inputs))
 
-        expected = row['class'] if self.dataset.task == 'classification' else row['output']
-        error = output - expected
+        # TODO: Encode output column for use with softmax before running through NN model.
+        y = row[output_col]
+        e = [z[-1] - y]
+        for layer_index in range(len(self.layers) - 1, 0, -1):
+            layer = self.layers[layer_index]
+            next_layer = self.layers[layer_index + 1]
+            next_layer_error = e[0]
+            e.insert(0, np.dot(next_layer_error, next_layer.weights.T))
 
-        for layer in reversed(self.layers):
-            error = layer.backward(error)
+        Δw = []
+        for i in range(1, len(self.layers)):
+            layer = self.layers[i]
+            Δw.append(η * e[i] * layer._activate_derivative(z[i]) * z[i - 1])
 
-        return error
+        Δb = []
+        for i in range(1, len(self.layers)):
+            layer = self.layers[i]
+            Δb.append(η * e[i] + layer._activate_derivative(z[i]))
+
+        return Δw, Δb
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
-        result = pd.Series(index=df.index, dtype='object')
+        result = pd.Series(index=df.index)
         for _, row in df.iterrows():
             result[row.name] = self._predict_row_class(row)
         return result
 
     def _predict_row_class(self, row: pd.Series) -> str:
-        values = row.values
-        for layer in self.layers:
+        output_col = 'class' if self.dataset.task == 'classification' else 'output'
+        values = row.drop(output_col).values
+        for i, layer in enumerate(self.layers):
             values = layer.forward(values)
         return self.classes[values.argmax()]
 
@@ -75,15 +138,6 @@ class Layer:
         """
         raise Exception("Must be implemented by subclass")
 
-    def backward(self, error: np.ndarray) -> np.ndarray:
-        """
-        Back propagate error through the layer.
-
-        :param error: Error to back propagate.
-        :return: Error of the layer.
-        """
-        raise Exception("Must be implemented by subclass")
-
 class InputLayer(Layer):
     """
     Input layer in a neural network.
@@ -94,12 +148,9 @@ class InputLayer(Layer):
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         if inputs.shape != (self.input_size,):
-            raise Exception("Input size does not match")
+            raise Exception("Input size does not match ({} ≠ {})", inputs.shape, (self.input_size,))
 
         return inputs
-
-    def backward(self, error: np.ndarray) -> np.ndarray:
-        return error
 
 class DenseLayer(Layer):
     """
@@ -124,17 +175,20 @@ class DenseLayer(Layer):
         self.bias = None
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
+        """
+        Forward propagate inputs through the layer.
+
+        :param inputs: Inputs to forward propagate.
+        :return: Outputs of the layer (shape: (units,)).
+        """
         if self.input_size is None:
             self.input_size = inputs.shape[0]
 
-        if self.nodes is None:
-            # Lazily construct nodes since input size is not known at initialization.
+        if self.weights is None:
+            # Lazily construct weights to avoid having to specify input size on initialization.
             self._initialize_weights_and_bias()
-        elif self.nodes[0].input_size != self.input_size:
-            raise Exception("Input size does not match, {} != {}".format(self.nodes[0].input_size, self.input_size))
 
-        z = np.dot(self.weights, inputs) + self.bias
-        return self._activate(z)
+        return self._activate(np.dot(self.weights, inputs) + self.bias)
 
     def _initialize_weights_and_bias(self):
         if self.activation == 'relu':
@@ -142,15 +196,17 @@ class DenseLayer(Layer):
             scale = 2.0 / max(1.0, self.input_size)
             limit = np.sqrt(3.0 * scale)
             self.weights = np.random.uniform(-limit, limit, (self.units, self.input_size))
+
         elif self.activation == 'tanh' or self.activation == 'sigmoid':
             # Xavier uniform initialization.
             scale = 1.0 / max(1.0, (self.input_size + self.units) / 2.0)
             limit = np.sqrt(3.0 * scale)
             self.weights = np.random.uniform(-limit, limit, (self.units, self.input_size))
+
         else:
             self.weights = np.random.randn(self.units, self.input_size)
 
-        self.bias = np.zeros((self.units, 1))
+        self.bias = np.zeros((self.units,))
 
     def _activate(self, z: np.ndarray) -> np.ndarray:
         if self.activation == 'sigmoid':
@@ -164,10 +220,18 @@ class DenseLayer(Layer):
         elif self.activation == 'linear':
             return z
 
-    def backward(self, error: np.ndarray) -> np.ndarray:
-        error = np.dot(self.weights.T, error)
-        # TODO: Update weights and bias.
-        return error
+    def _activate_derivative(self, z: np.ndarray) -> np.ndarray:
+        if self.activation == 'sigmoid':
+            return np.exp(z) / (1 + np.exp(z)) ** 2
+        elif self.activation == 'relu':
+            return np.where(z > 0, 1, 0)
+        elif self.activation == 'tanh':
+            return np.sech(z) ** 2
+        elif self.activation == 'softmax':
+            s = self._activate(z).reshape(-1, 1)
+            return np.diagflat(s) - np.dot(s, s.T)
+        elif self.activation == 'linear':
+            return np.ones(z.shape)
 
 class DropoutLayer(Layer):
     """
@@ -183,7 +247,3 @@ class DropoutLayer(Layer):
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         dropout = lambda x: x if np.random.rand() > self.rate else 0
         return dropout(inputs)
-
-    def backward(self, error: np.ndarray) -> np.ndarray:
-        return error
-
