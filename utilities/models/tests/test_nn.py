@@ -25,10 +25,10 @@ class TestNeuralNetwork(unittest.TestCase):
 
         np.random.seed(1)
 
-        model = NeuralNetworkModel(batch_size=9)
+        model = NeuralNetworkModel(batch_size=9, learning_rate=0.001, num_epochs=500)
         model.layers = [
             InputLayer(2),
-            DenseLayer(3, activation='sigmoid'),
+#             DenseLayer(3, activation='sigmoid'),
             DenseLayer(3, activation='sigmoid'),
             DenseLayer(3, activation='softmax'),
         ]
