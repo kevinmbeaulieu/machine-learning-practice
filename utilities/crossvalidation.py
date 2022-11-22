@@ -24,7 +24,7 @@ def split_for_cross_validation(
         'kx2' for (k x 2)-fold cross validation
     :param k: int, k to use for k-fold/(k x 2)-fold cross validation
     :param dataset: Dataset, Metadata about the dataset being processed
-    
+
     :return list[pd.DataFrame]
         k-fold cross validation: First element is a validation set (20% of original
             dataset). Remaining elements are k equally sized partitions of the
@@ -106,11 +106,11 @@ def cross_validate(
                 df_train, df_test = featurescaling.normalize_attributes(df_train, df_test, dataset)
 
                 model = model_factory()
-                
+
                 if verbose:
                     print("      Training model...")
                 model.train(df_train, dataset)
-                
+
                 if verbose:
                     print("      Predicting test data...")
                 predictions = model.predict(df_test)
@@ -125,14 +125,14 @@ def cross_validate(
                 metric_values = compute_metrics(actual, predictions, dataset.metrics, dataset.positive_class, dataset.negative_class)
                 for metric_name, metric_value in zip(dataset.metrics, metric_values):
                     metrics[metric_name].append(metric_value)
-        
+
         print("Results for {} dataset".format(name))
         for metric_name in metrics.keys():
             metrics[metric_name] = stats.tmean(metrics[metric_name])
             print("    {}: {}".format(metric_name, metrics[metric_name]))
-        
+
         result_metrics[name] = metrics
-    
+
     return result_metrics
 
 def _split(df: pd.DataFrame, k: int=None, frac: list[float]=None, stratify_by: str=None) -> list[pd.DataFrame]:
@@ -206,7 +206,7 @@ def _stratified_split(df: pd.DataFrame, stratify_by: str, frac: list[float], par
     for class_df in df_for_each_class:
         partitions_for_current_class = _split(class_df, frac=frac)
         partitions_for_each_class.append(partitions_for_current_class)
-    
+
     for class_index in range(len(partitions_for_each_class)):
         for partition_index in range(n_partitions):
             partitions[partition_index] = pd.concat(
