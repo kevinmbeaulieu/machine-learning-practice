@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from utilities.metrics import compute_metrics
 from utilities.preprocessing.dataset import Dataset
 from .model import Model
 
@@ -40,7 +41,18 @@ class NeuralNetworkModel(Model):
             for batch_index, batch in enumerate(self._get_batches(df)):
                 if self.verbose:
                     print("  Training batch {}".format(batch_index))
-                self._train_batch(batch)
+                self._train_batch(batch, batch_index)
+
+            if self.verbose:
+                actual = df['class']
+                expected = self.predict(df.drop('class', axis=1))
+                train_acc = compute_metrics(
+                    actual.to_numpy(),
+                    expected.to_numpy(),
+                    metrics=dataset.metrics,
+                    use_sklearn=False
+                )
+                print("  Train accuracy: {}".format(train_acc))
 
     def _get_batches(self, df: pd.DataFrame) -> list[pd.DataFrame]:
         num_batches = np.ceil(df.shape[0] / self.batch_size).astype(int)
@@ -51,7 +63,7 @@ class NeuralNetworkModel(Model):
     def _train_batch(self, batch: pd.DataFrame):
         dW = []
         for t, row in batch.iterrows():
-            dW_t = self._backpropagate(row, t)
+            dW_t = self._backpropagate(row)
             if dW:
                 dW = [dw + self.learning_rate * dw_t for dw, dw_t in zip(dW, dW_t)]
             else:
@@ -59,9 +71,8 @@ class NeuralNetworkModel(Model):
 
         for i, layer in enumerate(self.layers[1:]):
             layer.update_weights(dW[i])
-        print()
 
-    def _backpropagate(self, row: pd.Series, foo: int) -> list[np.ndarray]:
+    def _backpropagate(self, row: pd.Series) -> list[np.ndarray]:
         """
         Train row via forward-propagation followed by back-propagation.
 
@@ -146,7 +157,6 @@ class NeuralNetworkModel(Model):
             values = layer.forward(values)
 
         if self.dataset.task == 'classification':
-            print(values)
             return self.classes[values.argmax()]
         else:
             return values
