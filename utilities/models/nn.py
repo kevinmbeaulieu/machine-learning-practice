@@ -116,7 +116,7 @@ class NeuralNetworkModel(Model):
         x_t = row.drop(output_col).values
         a_t = []
         for layer in self.layers:
-            layer_inputs = (a_t[-1] if a_t else x_t).astype('float')
+            layer_inputs = (a_t[-1] if a_t else x_t).astype('float64')
             a_t.append(layer.forward(layer_inputs))
 
         correct_class = row[output_col]
@@ -143,7 +143,7 @@ class NeuralNetworkModel(Model):
         return Δw_t
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
-        result_dtype = 'str' if self.dataset.task == 'classification' else 'float'
+        result_dtype = 'str' if self.dataset.task == 'classification' else 'float64'
         result = pd.Series(index=df.index, dtype=result_dtype)
         for _, row in df.iterrows():
             result[row.name] = self._predict_row_class(row)
@@ -220,7 +220,6 @@ class DenseLayer(Layer):
         self.activation = activation
         self.input_size = None
         self.weights = None
-#         self.bias = None
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -236,7 +235,6 @@ class DenseLayer(Layer):
             # Lazily construct weights to avoid having to specify input size on initialization.
             self._initialize_weights_and_bias()
 
-#         return self._activate(np.dot(self.weights, inputs) + self.bias)
         return self._activate(np.dot(self.weights, inputs))
 
     def _initialize_weights_and_bias(self):
@@ -255,8 +253,6 @@ class DenseLayer(Layer):
         else:
             self.weights = np.random.randn(self.units, self.input_size)
 
-#         self.bias = np.zeros((self.units,))
-
     def _activate(self, z: np.ndarray) -> np.ndarray:
         if self.activation == 'sigmoid':
             # Avoid overflow.
@@ -272,19 +268,19 @@ class DenseLayer(Layer):
         elif self.activation == 'linear':
             return z
 
-    def _activation_fn_derivative(self, z: np.ndarray) -> np.ndarray:
+    def _activation_fn_derivative(self, a: np.ndarray) -> np.ndarray:
         if self.activation == 'sigmoid':
-            return np.exp(z) / (1 + np.exp(z)) ** 2
+            return a * (1 - a)
         elif self.activation == 'relu':
-            return np.where(z > 0, 1, 0)
+            return np.where(a > 0, 1, 0)
         elif self.activation == 'tanh':
-            return np.sech(z) ** 2
+            return 1 - np.tanh(a) ** 2
         elif self.activation == 'softmax':
             # Jacobian of softmax is a diagonal matrix with the softmax values on the diagonal.
             # https://eli.thegreenplace.net/2016/the-softmax-function-and-its-derivative/
-            return np.diag(z) - np.outer(z, z)
+            return np.diag(a) - np.outer(a, a)
         elif self.activation == 'linear':
-            return np.ones(z.shape)
+            return np.ones(a.shape)
 
     def update_weights(self, Δw: np.ndarray):
         self.weights += Δw
