@@ -301,5 +301,5 @@ class DropoutLayer(Layer):
         self.rate = rate
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
-        dropout = lambda x: x if np.random.rand() > self.rate else 0
-        return dropout(inputs)
+        # For each row in input, replace it with zero with probability self.rate.
+        return np.where(np.random.rand(*inputs.shape) < self.rate, 0, inputs)
