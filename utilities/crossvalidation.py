@@ -38,17 +38,17 @@ def split_for_cross_validation(
 
     stratify_by = 'class' if dataset.task == 'classification' else None
     if include_validation:
-        df_train_test, df_val = _split(df, frac=[0.8, 0.2], stratify_by=stratify_by)
+        df_train_test, df_val = split(df, frac=[0.8, 0.2], stratify_by=stratify_by)
         result = [df_val]
     else:
         df_train_test = df
         result = []
 
     if strategy == 'k':
-        result.extend(_split(df_train_test, k=k, stratify_by=stratify_by))
+        result.extend(split(df_train_test, k=k, stratify_by=stratify_by))
     elif strategy == 'kx2':
         for _ in range(k):
-            result.extend(_split(df_train_test, k=2, stratify_by=stratify_by))
+            result.extend(split(df_train_test, k=2, stratify_by=stratify_by))
     else:
         raise Exception("Failed to cross validate with unrecognized strategy {}".format(strategy))
 
@@ -135,7 +135,7 @@ def cross_validate(
 
     return result_metrics
 
-def _split(df: pd.DataFrame, k: int=None, frac: list[float]=None, stratify_by: str=None) -> list[pd.DataFrame]:
+def split(df: pd.DataFrame, k: int=None, frac: list[float]=None, stratify_by: str=None) -> list[pd.DataFrame]:
     """
     Split the DataFrame into k partitions. Each row in the DataFrame will exist in 
     exactly one of the partitions.
@@ -162,12 +162,12 @@ def _split(df: pd.DataFrame, k: int=None, frac: list[float]=None, stratify_by: s
 
     n_partitions = len(frac)
     partitions = [pd.DataFrame() for _ in range(n_partitions)]
-    n_per_partition = [int(df.shape[0] * frac[i]) for i in range(n_partitions)]
 
     if stratify_by is None:
-        _random_split(df, n_per_partition, partitions)
+        n_per_partition = [int(df.shape[0] * frac[i]) for i in range(n_partitions)]
+        _random_split(df, n_per_partition=n_per_partition, partitions=partitions)
     else:
-        _stratified_split(df, stratify_by, n_per_partition, partitions)
+        _stratified_split(df, stratify_by=stratify_by, frac=frac, partitions=partitions)
 
     return partitions
 
@@ -180,7 +180,7 @@ def _random_split(df: pd.DataFrame, n_per_partition: list[int], partitions: list
         # (If all partitions have ≥n_per_partition[i] elements, pick any random partition for
         # each remaining element).
         unfilled_partition_indices = list(filter(
-            lambda i: partitions[i].shape[0] < n_per_partition[i], 
+            lambda i: partitions[i].shape[0] < n_per_partition[i],
             list(range(n_partitions))
         ))
         if len(unfilled_partition_indices) > 0:
@@ -204,7 +204,7 @@ def _stratified_split(df: pd.DataFrame, stratify_by: str, frac: list[float], par
     # (partitions_for_each_class[i][j] = j'th partition of class i, for 0≤i<n_classes, 0≤j<k)
     partitions_for_each_class = []
     for class_df in df_for_each_class:
-        partitions_for_current_class = _split(class_df, frac=frac)
+        partitions_for_current_class = split(class_df, frac=frac)
         partitions_for_each_class.append(partitions_for_current_class)
 
     for class_index in range(len(partitions_for_each_class)):
