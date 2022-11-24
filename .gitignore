@@ -128,5 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# pyright type checker
+pyrightconfig.json
+
 # macOS
 .DS_Store
