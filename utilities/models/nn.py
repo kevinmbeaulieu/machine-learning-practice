@@ -259,7 +259,9 @@ class DenseLayer(Layer):
 
     def _activate(self, z: np.ndarray) -> np.ndarray:
         if self.activation == 'sigmoid':
-            return 1 / (1 + np.exp(-z))
+            # Avoid overflow.
+            sigmoid = lambda x: (np.exp(x) / (1 + np.exp(x))) if x < 0 else (1 / (1 + np.exp(-x)))
+            return np.array([sigmoid(x) for x in z])
         elif self.activation == 'relu':
             return np.maximum(0, z)
         elif self.activation == 'tanh':
