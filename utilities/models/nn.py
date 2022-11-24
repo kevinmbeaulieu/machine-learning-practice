@@ -41,7 +41,7 @@ class NeuralNetworkModel(Model):
             for batch_index, batch in enumerate(self._get_batches(df)):
                 if self.verbose:
                     print("  Training batch {}".format(batch_index))
-                self._train_batch(batch, batch_index)
+                self._train_batch(batch)
 
             if self.verbose:
                 actual = df['class']
