@@ -51,15 +51,15 @@ def min_max_scale(df_train: pd.DataFrame, df_test: pd.DataFrame, col_name: str) 
     """
     Perform min-max scaling for all specified attributes in the dataset.
 
-    Note: The min and max of the training set is used for normalizing both the training and test sets.
+    Note: The min and max of the training set is used for scaling both the training and test sets.
 
     :param df_train: pd.DataFrame, Training dataset.
     :param df_test: pd.DataFrame, Test dataset.
-    :param col_name: str, Column label of attribute to normalize (must have the same name in df_train and df_test).
+    :param col_name: str, Column label of attribute to scale (must have the same name in df_train and df_test).
 
     :return tuple[pd.DataFrame, pd.DataFrame]:
-        0: A new DataFrame containing the training set with the specified attribute standardized.
-        1: A new DataFrame containing the test set with the specified attributed standardized.
+        0: A new DataFrame containing the training set with the specified attribute scaled.
+        1: A new DataFrame containing the test set with the specified attributed scaled.
     """
 
     train_min = df_train[col_name].min()
@@ -72,21 +72,25 @@ def min_max_scale(df_train: pd.DataFrame, df_test: pd.DataFrame, col_name: str) 
 
     return (result_train, result_test)
 
-def normalize_attributes(df_train: pd.DataFrame, df_test: pd.DataFrame, dataset: Dataset) -> tuple[pd.DataFrame, pd.DataFrame]:
+def min_max_scale_attributes(
+    df_train: pd.DataFrame,
+    df_test: pd.DataFrame,
+    dataset: Dataset
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Perform min-max scaling for all specified attributes in the dataset.
 
-    Note: The min and max of the training set is used for normalizing both the training and test sets.
+    Note: The min and max of the training set is used for scaling both the training and test sets.
 
     :param df_train: pd.DataFrame, Training dataset.
     :param df_test: pd.DataFrame, Test dataset.
     :param dataset: Dataset, Metadata about the dataset being processed
 
     :return tuple[pd.DataFrame, pd.DataFrame]:
-        0: A new DataFrame containing the training set with the specified attribute standardized.
-        1: A new DataFrame containing the test set with the specified attributed standardized.
+        0: A new DataFrame containing the training set with the specified attribute scaled to 0–1.
+        1: A new DataFrame containing the test set with the specified attributed scaled to 0–1.
     """
     result_train, result_test = df_train, df_test
-    for col_name in dataset.normalize_cols:
+    for col_name in dataset.min_max_scale_cols:
         result_train, result_test = min_max_scale(result_train, result_test, col_name)
     return result_train, result_test

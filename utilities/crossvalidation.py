@@ -98,12 +98,12 @@ def cross_validate(
                 df_train, df_test = train_test_pairs[j]
 
                 if verbose:
-                    print("      Standardizing data...")
+                    print(f"      Scaling {len(dataset.standardize_cols)} columns with z-score standardization...")
                 df_train, df_test = featurescaling.standardize_attributes(df_train, df_test, dataset)
 
                 if verbose:
-                    print("      Normalizing data...")
-                df_train, df_test = featurescaling.normalize_attributes(df_train, df_test, dataset)
+                    print(f"      Scaling {len(dataset.min_max_scale_cols)} columns with min-max scaling...")
+                df_train, df_test = featurescaling.min_max_scale_attributes(df_train, df_test, dataset)
 
                 model = model_factory()
 

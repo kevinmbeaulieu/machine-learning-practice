@@ -17,7 +17,7 @@ class Dataset:
         nominal_cols: list[str] = [],
         ordinal_cols: dict[str, list[any]] = {},
         standardize_cols: list[str] = [],
-        normalize_cols: list[str] = [],
+        min_max_scale_cols: list[str] = [],
         missing_value_symbol: str = None,
         positive_class: str = None,
         negative_class: str = None,
@@ -46,7 +46,7 @@ class Dataset:
             (default: {}).
         :param standardize_cols: list[str], Labels for columns which should be standardized
             according to z-score standardization.
-        :param normalize_cols: list[str], Labels for columns which should be normalized
+        :param min_max_scale_cols: list[str], Labels for columns which should be scaled with min-max scaling
             using min-max scaling.
         :param missing_value: str, Symbol used to represent missing values in the CSV,
             or None if the dataset is known to contain no missing values (default: None).
@@ -67,7 +67,7 @@ class Dataset:
         self.nominal_cols = nominal_cols
         self.ordinal_cols = ordinal_cols
         self.standardize_cols = standardize_cols
-        self.normalize_cols = normalize_cols
+        self.min_max_scale_cols = min_max_scale_cols
         self.missing_value_symbol = missing_value_symbol
         self.positive_class = positive_class
         self.negative_class = negative_class
