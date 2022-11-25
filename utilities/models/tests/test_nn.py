@@ -20,30 +20,9 @@ class TestNeuralNetwork(unittest.TestCase):
             standardize_cols=['sepal_length', 'sepal_width', 'petal_length', 'petal_width'],
             metrics=['acc'],
         )
-        df = dataset.load_data()
-        df_train, df_test = crossvalidation.split(df, frac=[0.8, 0.2], stratify_by='class')
-        df_train, df_test = featurescaling.standardize_attributes(df_train, df_test, dataset)
-        print(df_train)
-        print(df_test)
-        X_test = df_test.drop('class', axis=1)
-        y_test = df_test['class'].reset_index(drop=True)
-
-        model = NeuralNetworkModel(batch_size=df_train.shape[0], learning_rate=0.001, num_epochs=1000)
-        model.layers = [
-            InputLayer(4),
-            DenseLayer(100, activation='tanh'),
-            DropoutLayer(0.8),
-            DenseLayer(50, activation='tanh'),
-            DenseLayer(3, activation='softmax'),
-        ]
-        model.train(df_train, dataset)
-        got = model.predict(X_test).reset_index(drop=True)
-
-        pd.testing.assert_series_equal(y_test, got)
+        self._verify_classification_dataset(dataset)
 
     def test_predict_classification_fruit(self):
-#         np.random.seed(1)
-
         dataset = Dataset(
             name='fruit',
             task='classification',
@@ -54,37 +33,42 @@ class TestNeuralNetwork(unittest.TestCase):
             standardize_cols=['mass', 'width', 'height', 'color_score'],
             metrics=['acc'],
         )
+        self._verify_classification_dataset(dataset)
+
+    def _verify_classification_dataset(self, dataset: Dataset):
         df = dataset.load_data()
         df_train, df_test = crossvalidation.split(df, frac=[0.8, 0.2], stratify_by='class')
         df_train, df_test = featurescaling.standardize_attributes(df_train, df_test, dataset)
+        X_test = df_test.drop('class', axis=1)
+        y_test = df_test['class']
 
-        model = NeuralNetworkModel(batch_size=df_train.shape[0], learning_rate=0.001, num_epochs=100)
+        model = NeuralNetworkModel(
+            batch_size=df_train.shape[0],
+            learning_rate=0.001,
+            num_epochs=500,
+            verbose=True
+        )
         model.layers = [
-            InputLayer(4),
-            DenseLayer(150, activation='sigmoid'),
-            DropoutLayer(0.8),
-            DenseLayer(150, activation='sigmoid'),
-            DenseLayer(4, activation='softmax'),
+            InputLayer(X_test.shape[1]),
+            DenseLayer(500, activation='relu'),
+            DenseLayer(100, activation='relu'),
+            DenseLayer(df_train['class'].unique().shape[0], activation='softmax'),
         ]
         model.train(df_train, dataset)
-        got = model.predict(df_test.drop('class', axis=1)).reset_index(drop=True)
+        got = model.predict(X_test)
 
-#         expected = df_test['class'].reset_index(drop=True)
-        sklearn_model = MLPClassifier(
-            (100, 100),
-#             activation='tanh',
-#             solver='sgd',
-#             alpha=0.001,
-#             batch_size=df_train.shape[0],
-            max_iter=1000,
-#             random_state=1
-        ).fit(df_train.drop('class', axis=1), df_train['class'])
-        expected = pd.Series(sklearn_model.predict(df_test.drop('class', axis=1)))
-
-#         pd.testing.assert_series_equal(df_test['class'].reset_index(drop=True), expected)
-        pd.testing.assert_series_equal(expected, got)
+        pd.testing.assert_series_equal(y_test, got, check_index=False)
 
     def test_predict_classification(self):
+        dataset = Dataset(
+            name='test',
+            task='classification',
+            file_path='fake.csv',
+            col_names=['size', 'shape', 'class'],
+            standardize_cols=['size', 'shape'],
+            metrics=['acc'],
+        )
+
         df_train = pd.DataFrame({
             'size': [1, 2, 2, 3, 6, 6],
             'shape': [2, 3, 7, 6, 3, 5],
@@ -93,29 +77,24 @@ class TestNeuralNetwork(unittest.TestCase):
         df_test = pd.DataFrame({
             'size': [1, 2, 4, 5, 7, 8],
             'shape': [7, 1, 1, 7, 2, 5],
+            'class': ['green', 'red', 'red', 'green', 'blue', 'blue'],
         })
-        dataset = Dataset(
-            name='test',
-            task='classification',
-            file_path='fake.csv',
-            col_names=['size', 'shape', 'class'],
-        )
+        df_train, df_test = featurescaling.standardize_attributes(df_train, df_test, dataset)
+        X_test = df_test.drop('class', axis=1)
+        y_test = df_test['class']
 
-        np.random.seed(1)
-
-        model = NeuralNetworkModel(batch_size=6, learning_rate=0.0001, num_epochs=500)
+        model = NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500)
         model.layers = [
             InputLayer(2),
-#             DenseLayer(3, activation='sigmoid'),
-            DenseLayer(3, activation='sigmoid'),
+            DenseLayer(100, activation='relu'),
+            DenseLayer(50, activation='relu'),
             DenseLayer(3, activation='softmax'),
         ]
         model.train(df_train, dataset)
-        got = model.predict(df_test).reset_index(drop=True)
+        got = model.predict(X_test)
 
-        expected = pd.Series(['green', 'red', 'red', 'green', 'blue', 'blue'])
 
-        pd.testing.assert_series_equal(expected, got)
+        pd.testing.assert_series_equal(y_test, got, check_index=False)
 
     def test_predict_regression(self):
         df_train = pd.DataFrame({
