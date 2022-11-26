@@ -34,49 +34,66 @@ class NeuralNetworkModel(Model):
 
         if self.verbose:
             print("Training for {} epochs".format(self.num_epochs))
+
         metrics = []
         for epoch in range(self.num_epochs):
             if self.verbose:
                 print("Starting epoch {}...".format(epoch))
-            batches = self._get_batches(df)
+
             for batch_index, batch in enumerate(self._get_batches(df)):
                 if self.verbose:
                     print("  Training batch {}".format(batch_index))
                 self._train_batch(batch)
 
             if self.verbose:
-                actual = df['class']
-                expected = self.predict(df.drop('class', axis=1))
-                epoch_metrics = compute_metrics(
-                    actual.to_numpy(),
-                    expected.to_numpy(),
-                    metrics=dataset.metrics,
-                    use_sklearn=False
-                )
-                metrics.append(epoch_metrics)
-                print("  Epoch metrics:")
-                for i, metric in enumerate(dataset.metrics):
-                    print(f"    {metric}: {epoch_metrics[i]}")
+                metrics.append(self._compute_epoch_metrics(df))
 
-        for i, metric in enumerate(dataset.metrics):
-            plt.title(metric)
-            plt.xlabel("Epoch")
-            plt.ylabel(metric)
-            plt.plot([metric[i] for metric in metrics])
-            plt.show()
+        if metrics:
+            self._plot_epoch_metrics(metrics)
+
+    def predict(self, df: pd.DataFrame) -> pd.Series:
+        result_dtype = 'str' if self.dataset.task == 'classification' else np.double
+        result = pd.Series(index=df.index, dtype=result_dtype)
+        for _, row in df.iterrows():
+            x = row.values.reshape(-1, 1)
+            a_back = x
+            a = None
+            for layer in self.layers:
+                a = layer.forward(a_back)
+                a_back = a
+
+            if self.dataset.task == 'classification':
+                result[row.name] = self.classes[a.argmax()]
+            else:
+                result[row.name] = a[0]
+        return result
 
     def _get_batches(self, df: pd.DataFrame) -> list[pd.DataFrame]:
+        """
+        Split the dataset into batches.
+
+        :param df: Training Dataset
+        :return: List of batches
+        """
+
         num_batches = np.ceil(df.shape[0] / self.batch_size).astype(int)
         return [df.sample(self.batch_size) for _ in range(num_batches)]
 
     def _train_batch(self, batch: pd.DataFrame):
+        """
+        Train the model on a batch of data.
+
+        :param batch: Batch of data
+        """
+
         Δw, Δb = [], []
         for r in range(batch.shape[0]):
             row = batch.iloc[r]
-            Δw_t, Δb_t = self._backpropagate(row)
+            Δw_t, Δb_t = self._train_row(row)
             Δw = [Δw[i] + Δw_t[i] for i in range(len(Δw))] if Δw else Δw_t
             Δb = [Δb[i] + Δb_t[i] for i in range(len(Δb))] if Δb else Δb_t
 
+        # Scale down since we just summed over all rows in the batch
         Δw = [Δw[i] / batch.shape[0] for i in range(len(Δw))]
         Δb = [Δb[i] / batch.shape[0] for i in range(len(Δb))]
 
@@ -85,7 +102,7 @@ class NeuralNetworkModel(Model):
         for i, layer in enumerate(self.layers[1:]):
             layer.update_weights(Δw[i], Δb[i])
 
-    def _backpropagate(self, row: pd.Series) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    def _train_row(self, row: pd.Series) -> tuple[list[np.ndarray], list[np.ndarray]]:
         """
         Train row via forward-propagation followed by back-propagation.
 
@@ -94,68 +111,78 @@ class NeuralNetworkModel(Model):
         """
 
         output_col = 'class' if self.dataset.task == 'classification' else 'output'
-        x_t = row.drop(output_col).values
+        x = row.drop(output_col).values.reshape(-1, 1)
         if self.dataset.task == 'classification':
-            y_t = np.array([1 if c == row[output_col] else 0 for c in self.classes])
+            y = np.array([1 if c == row[output_col] else 0 for c in self.classes]).reshape(-1, 1)
         else:
-            y_t = row[output_col]
+            y = row[output_col]
 
-        a_t = [] # shape: (num_layers, num_neurons_in_layer)
-        z_t = [] # shape: (num_layers, num_neurons_in_layer)
+        a = [] # a[k] = output of layer k
         for k, layer in enumerate(self.layers):
-            z_t_k = (a_t[-1] if a_t else x_t).astype('float64')
-            a_t_k = layer.forward(z_t_k)
-            z_t.append(z_t_k)
-            a_t.append(a_t_k)
+            a_back = (x if k == 0 else a[k - 1]).astype(np.double)
+            a.append(layer.forward(a_back))
 
-        e_t_k = self._compute_loss_partial(y_t, a_t[-1])
-        Δw_t, Δb_t = [], []
+        da_forward = self._compute_loss_partial(y, a[-1])
+        Δw, Δb = [], []
         for k in range(len(self.layers) - 1, 0, -1):
             layer = self.layers[k]
-            if k < len(self.layers) - 1:
-                e_t_k = e_t_k.reshape(1, -1) @ self.layers[k + 1].weights
-            f_prime = layer.activation_fn_derivative(a_t[k - 1])
-            delta = -self.learning_rate * e_t_k.reshape(-1, 1) @ f_prime.reshape(1, -1)
-            Δw_t_k = delta * z_t[k]
-            Δb_t_k = delta.mean(axis=1)
-            Δw_t.insert(0, Δw_t_k)
-            Δb_t.insert(0, Δb_t_k)
+            Δw_k, Δb_k, da_k = layer.backward(
+                a=a[k],
+                da_forward=da_forward,
+                a_back=a[k - 1],
+            )
+            Δw.insert(0, self.learning_rate * Δw_k)
+            Δb.insert(0, self.learning_rate * Δb_k)
+            da_forward = da_k
 
-        return Δw_t, Δb_t
+        return Δw, Δb
 
-    def _compute_loss_partial(self, y_t: np.ndarray, a_t: np.ndarray) -> float:
+    def _compute_loss_partial(self, y: np.ndarray, a: np.ndarray) -> np.double:
         """
         Compute partial derivative of loss function with respect to input of layer
-        (i.e., δ_t = ∂loss/∂a_t).
+        (i.e., δ = ∂loss/∂a).
 
         For classification, loss is the cross-entropy loss.
         For regression, loss is the mean squared error.
 
-        :param y_t: Expected output (shape: (1, num_classes))
-        :param a_t: Actual output (shape: (1, num_classes))
+        :param y: Expected output (shape: (1, num_classes))
+        :param a: Actual output (shape: (1, num_classes))
         :return: Partial derivative of loss function with respect to input of layer (shape: (1, num_classes))
         """
 
+        # TODO: Is it true that the partial derivative of the loss function happens to be
+        # the same for both categorical cross-entropy and mean squared error?
         if self.dataset.task == 'classification':
             # ∂E/∂z for E = -y * log(a)
-            return a_t - y_t
+            return a - y
         else:
             # ∂E/∂z for E = (y - a)^2 / 2
-            return a_t - y_t
+            return a - y
 
-    def predict(self, df: pd.DataFrame) -> pd.Series:
-        result_dtype = 'str' if self.dataset.task == 'classification' else 'float64'
-        result = pd.Series(index=df.index, dtype=result_dtype)
-        for _, row in df.iterrows():
-            values = row.values
-            for i, layer in enumerate(self.layers):
-                values = layer.forward(values)
+    def _compute_epoch_metrics(self, df: pd.DataFrame) -> list[float]:
+        output_col = 'class' if self.dataset.task == 'classification' else 'output'
+        actual = df[output_col]
+        expected = self.predict(df.drop(output_col, axis=1))
+        epoch_metrics = compute_metrics(
+            actual.to_numpy(),
+            expected.to_numpy(),
+            metrics=self.dataset.metrics,
+            use_sklearn=False
+        )
+        print("  Epoch metrics:")
+        for i, metric in enumerate(self.dataset.metrics):
+            print(f"    {metric}: {epoch_metrics[i]}")
+        return epoch_metrics
 
-            if self.dataset.task == 'classification':
-                result[row.name] = self.classes[values.argmax()]
-            else:
-                result[row.name] = values[0]
-        return result
+    def _plot_epoch_metrics(self, values: list[list[float]]):
+        for i, metric in enumerate(self.dataset.metrics):
+            plt.title(metric)
+            plt.xlabel("Epoch")
+            plt.ylabel(metric)
+            if self.dataset.task == 'regression':
+                plt.yscale('log')
+            plt.plot([epoch_values[i] for epoch_values in values])
+            plt.show()
 
 class Layer:
     """
@@ -169,8 +196,19 @@ class Layer:
         """
         Forward propagate inputs through the layer.
 
-        :param inputs: Inputs to forward propagate.
+        :param inputs: Inputs to forward propagate (e.g., outputs of previous layer).
         :return: Outputs of the layer.
+        """
+        raise Exception("Must be implemented by subclass")
+
+    def backward(self, a: np.ndarray, da_forward: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Backpropagate error through the layer.
+
+        :param a: Outputs of this layer (shape: (1, num_neurons_in_layer))
+        :param da_forward: Error of next layer (shape: (1, num_neurons_in_next_layer))
+        :param a_back: Outputs of previous layer (shape: (1, num_neurons_in_layer-1))
+        :return: Change in weights, change in biases, and error for this layer
         """
         raise Exception("Must be implemented by subclass")
 
@@ -192,10 +230,13 @@ class InputLayer(Layer):
         self.input_size = input_size
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
-        if inputs.shape != (self.input_size,):
-            raise Exception("Input size does not match ({} ≠ {})".format(inputs.shape, (self.input_size,)))
+        if inputs.shape != (self.input_size, 1):
+            raise Exception("Input size does not match ({} ≠ {})".format(inputs.shape, (self.input_size, 1)))
 
         return inputs
+
+    def backward(self, a: np.ndarray, da_forward: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return None, None, None
 
 class DenseLayer(Layer):
     """
@@ -230,10 +271,40 @@ class DenseLayer(Layer):
         if self.weights is None:
             # Lazily construct weights to avoid having to specify input size on initialization.
             self._initialize_weights(inputs.shape[0])
-        elif inputs.shape != (self.weights.shape[1],):
-            raise Exception("Input size does not match ({} ≠ {})".format(inputs.shape, (self.weights.shape[1],)))
+        elif inputs.shape != (self.weights.shape[1], 1):
+            raise Exception("Input size does not match ({} ≠ {})".format(inputs.shape, (self.weights.shape[1], 1)))
 
-        return self._activate(np.dot(self.weights, inputs))
+        z = self.weights.dot(inputs) + self.bias
+        return self._activate(z)
+
+    def backward(self, a: np.ndarray, da_forward: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Backpropagate error through the layer.
+
+        :param a: Outputs of this layer (shape: (1, num_neurons_in_layer))
+        :param da_forward: Error of next layer (shape: (1, num_neurons_in_next_layer))
+        :param a_back: Outputs of previous layer (shape: (1, num_neurons_in_layer-1))
+        :return: Change in weights, change in biases, and error for this layer
+        """
+
+        da_dz = self._activation_fn_derivative(a)
+        dz = (da_forward * da_dz)
+        Δw = -dz @ a_back.T / self.units
+        Δb = -dz.mean(axis=1, keepdims=True)
+
+        da = self.weights.T.dot(dz)
+        return Δw, Δb, da
+
+    def update_weights(self, Δw: np.ndarray, Δb: np.ndarray):
+        """
+        Update the weights of the layer.
+
+        :param Δw: Change in weights.
+        :param Δb: Change in biases.
+        """
+
+        self.weights += Δw
+        self.bias += Δb
 
     def _initialize_weights(self, input_size: int):
         """
@@ -257,7 +328,7 @@ class DenseLayer(Layer):
         else:
             self.weights = np.random.randn(self.units, input_size)
 
-        self.bias = np.zeros(self.units)
+        self.bias = np.zeros((self.units, 1))
 
     def _activate(self, z: np.ndarray) -> np.ndarray:
         """
@@ -281,7 +352,7 @@ class DenseLayer(Layer):
         elif self.activation == 'linear':
             return z
 
-    def activation_fn_derivative(self, a: np.ndarray) -> np.ndarray:
+    def _activation_fn_derivative(self, a: np.ndarray) -> np.ndarray:
         """
         Compute the partial derivative of the activation function with respect to its inputs
         for each node in this layer.
@@ -304,17 +375,6 @@ class DenseLayer(Layer):
             return a * (1 - a)
         elif self.activation == 'linear':
             return np.ones(a.shape)
-
-    def update_weights(self, Δw: np.ndarray, Δb: np.ndarray):
-        """
-        Update the weights of the layer.
-
-        :param Δw: Change in weights.
-        :param Δb: Change in biases.
-        """
-
-        self.weights += Δw
-        self.bias += Δb
 
 class DropoutLayer(Layer):
     """
