@@ -1,10 +1,8 @@
-from sklearn.neural_network import MLPClassifier
-import numpy as np
 import pandas as pd
 import unittest
 
 from utilities import crossvalidation
-from utilities.models.nn import NeuralNetworkModel, InputLayer, DenseLayer, DropoutLayer
+from utilities.models.nn import NeuralNetworkModel, InputLayer, DenseLayer
 from utilities.preprocessing import featurescaling, encoding
 from utilities.preprocessing.dataset import Dataset
 
@@ -45,9 +43,10 @@ class TestNeuralNetwork(unittest.TestCase):
         model = NeuralNetworkModel(
             batch_size=df_train.shape[0],
             learning_rate=0.01,
-            num_epochs=5000,
+            num_epochs=500,
             verbose=True
         )
+        model.df_validation = df_test
         model.layers = [
             InputLayer(X_test.shape[1]),
             DenseLayer(500, activation='relu'),
@@ -96,6 +95,18 @@ class TestNeuralNetwork(unittest.TestCase):
 
         pd.testing.assert_series_equal(y_test, got, check_index=False)
 
+    def test_predict_classification_fish(self):
+        dataset = Dataset(
+            name='fish',
+            task='classification',
+            file_path='utilities/models/tests/fixtures/Fish.csv',
+            col_names=['class', 'weight', 'length1', 'length2', 'length3', 'height', 'width'],
+            header=0,
+            standardize_cols=['weight', 'length1', 'length2', 'length3', 'height', 'width'],
+            metrics=['acc'],
+        )
+        self._verify_classification_dataset(dataset)
+
     def test_predict_regression_fish(self):
         dataset = Dataset(
             name='fish',
@@ -104,7 +115,7 @@ class TestNeuralNetwork(unittest.TestCase):
             col_names=['species', 'output', 'length1', 'length2', 'length3', 'height', 'width'],
             header=0,
             standardize_cols=['length1', 'length2', 'length3', 'height', 'width'],
-            nominal_cols=['species'],
+            ignore_cols=['species'],
             metrics=['mse'],
         )
         self._verify_regression_dataset(dataset)
@@ -119,10 +130,11 @@ class TestNeuralNetwork(unittest.TestCase):
 
         model = NeuralNetworkModel(
             batch_size=df_train.shape[0],
-            learning_rate=0.1,
+            learning_rate=0.01,
             num_epochs=5000,
             verbose=True
         )
+        model.df_validation = df_test
         model.layers = [
             InputLayer(X_test.shape[1]),
             DenseLayer(500, activation='relu'),

@@ -35,8 +35,6 @@ def compute_metrics(
     :return list, List of metric values in the same order as the input list of metric names.
     """
     assert actual.size == predicted.size
-    # actual = actual.reset_index(drop=True)
-    # predicted = predicted.reset_index(drop=True)
 
     if use_sklearn:
         return list(
@@ -51,7 +49,7 @@ def compute_metrics(
         confusion_matrix = _compute_confusion_matrix(actual, predicted, positive_class, negative_class)
     return list(
         map(
-            lambda metric: _compute_metric(actual, predicted, metric, confusion_matrix), 
+            lambda metric: _compute_metric(actual, predicted, metric, confusion_matrix),
             metrics
         )
     )
@@ -103,7 +101,7 @@ def _compute_confusion_matrix(actual: np.ndarray, predicted: np.ndarray, positiv
 
 def _compute_precision(confusion_matrix: np.ndarray) -> float:
     n_pred_positive = confusion_matrix[:, 0].sum()
-    
+
     if n_pred_positive == 0:
         return math.nan
     return confusion_matrix[0, 0] / n_pred_positive
@@ -111,7 +109,7 @@ def _compute_precision(confusion_matrix: np.ndarray) -> float:
 def _compute_recall(confusion_matrix: np.ndarray) -> float:
     n_true_positive = confusion_matrix[0, 0]
     n_actual_positive = confusion_matrix[0, :].sum()
-    
+
     if n_actual_positive == 0:
         return math.nan
     return n_true_positive / n_actual_positive
@@ -136,7 +134,7 @@ def _compute_r2(actual: np.ndarray, predicted: np.ndarray) -> float:
     ss_residual = ((actual - predicted) ** 2).sum()
     mean_actual = actual.mean()
     ss_total = ((actual - mean_actual) ** 2).sum()
-    
+
     if ss_total == 0:
         return math.nan
     return 1 - (ss_residual / ss_total)

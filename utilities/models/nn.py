@@ -23,6 +23,7 @@ class NeuralNetworkModel(Model):
         self.learning_rate = learning_rate
         self.layers = []
         self.verbose = verbose
+        self.df_validation = None
 
     def train(self, df: pd.DataFrame, dataset: Dataset):
         if not isinstance(self.layers[0], InputLayer):
@@ -35,7 +36,8 @@ class NeuralNetworkModel(Model):
         if self.verbose:
             print("Training for {} epochs".format(self.num_epochs))
 
-        metrics = []
+        metrics_train = []
+        metrics_validation = []
         for epoch in range(self.num_epochs):
             if self.verbose:
                 print("Starting epoch {}...".format(epoch))
@@ -46,10 +48,12 @@ class NeuralNetworkModel(Model):
                 self._train_batch(batch)
 
             if self.verbose:
-                metrics.append(self._compute_epoch_metrics(df))
+                metrics_train.append(self._compute_epoch_metrics(df))
+                if self.df_validation is not None:
+                    metrics_validation.append(self._compute_epoch_metrics(self.df_validation))
 
-        if metrics:
-            self._plot_epoch_metrics(metrics)
+        if metrics_train:
+            self._plot_epoch_metrics(metrics_train, metrics_validation)
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
         result_dtype = 'str' if self.dataset.task == 'classification' else np.double
@@ -167,21 +171,24 @@ class NeuralNetworkModel(Model):
             actual.to_numpy(),
             expected.to_numpy(),
             metrics=self.dataset.metrics,
-            use_sklearn=False
+            use_sklearn=True
         )
         print("  Epoch metrics:")
         for i, metric in enumerate(self.dataset.metrics):
             print(f"    {metric}: {epoch_metrics[i]}")
         return epoch_metrics
 
-    def _plot_epoch_metrics(self, values: list[list[float]]):
+    def _plot_epoch_metrics(self, values_train: list[list[float]], values_validation: list[list[float]] = None):
         for i, metric in enumerate(self.dataset.metrics):
             plt.title(metric)
             plt.xlabel("Epoch")
             plt.ylabel(metric)
             if self.dataset.task == 'regression':
                 plt.yscale('log')
-            plt.plot([epoch_values[i] for epoch_values in values])
+            map_metric_values = lambda values: [v[i] for v in values]
+            plt.plot(map_metric_values(values_train), label='train')
+            plt.plot(map_metric_values(values_validation), label='validation')
+            plt.legend()
             plt.show()
 
 class Layer:
