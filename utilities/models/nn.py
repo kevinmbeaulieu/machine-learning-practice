@@ -463,10 +463,9 @@ class DropoutLayer(Layer):
             return
 
         if not self.training:
-            raise Exception("Cannot start batch when not training.")
+            raise RuntimeError("Cannot start batch when not training")
 
         self._reset_weights(self.weights.shape)
 
     def _reset_weights(self, input_shape: tuple[int]):
-#         self.weights = self.rng.binomial(1, 1 - self.rate, input_shape)
-        self.weights = np.ones(input_shape)
+        self.weights = self.rng.binomial(1, 1 - self.rate, input_shape)
