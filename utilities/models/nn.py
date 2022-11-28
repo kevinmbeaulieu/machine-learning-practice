@@ -254,16 +254,19 @@ class DenseLayer(Layer):
         self,
         units: int,
         activation: str = 'linear',
+        rng: np.random.Generator = np.random.default_rng(),
     ):
         """
         :param units, int: Number of nodes in this layer, or number of features if this is
             the input layer
         :param activation, str: Activation function for each node in this layer
             ('sigmoid', 'relu', 'tanh', 'softmax', 'linear'; default: 'linear')
+        :param rng, np.random.Generator: Random number generator
         """
 
         self.units = units
         self.activation = activation
+        self.rng = rng
         self.weights = None
         self.bias = None
 
@@ -324,16 +327,16 @@ class DenseLayer(Layer):
             # He-et-al uniform initialization.
             scale = 2.0 / max(1.0, input_size)
             limit = np.sqrt(3.0 * scale)
-            self.weights = np.random.uniform(-limit, limit, (self.units, input_size))
+            self.weights = self.rng.uniform(-limit, limit, (self.units, input_size))
 
         elif self.activation == 'tanh' or self.activation == 'sigmoid':
             # Xavier uniform initialization.
             scale = 1.0 / max(1.0, (input_size + self.units) / 2.0)
             limit = np.sqrt(3.0 * scale)
-            self.weights = np.random.uniform(-limit, limit, (self.units, input_size))
+            self.weights = self.rng.uniform(-limit, limit, (self.units, input_size))
 
         else:
-            self.weights = np.random.randn(self.units, input_size)
+            self.weights = self.rng.standard_normal((self.units, input_size))
 
         self.bias = np.zeros((self.units, 1))
 
