@@ -36,6 +36,7 @@ class NeuralNetworkModel(Model):
         if self.verbose:
             print("Training for {} epochs".format(self.num_epochs))
 
+        self._enable_dropout_training()
         metrics_train = []
         metrics_validation = []
         for epoch in range(self.num_epochs):
@@ -48,9 +49,13 @@ class NeuralNetworkModel(Model):
                 self._train_batch(batch)
 
             if self.verbose:
+                self._disable_dropout_training()
                 metrics_train.append(self._compute_epoch_metrics(df))
                 if self.df_validation is not None:
                     metrics_validation.append(self._compute_epoch_metrics(self.df_validation))
+                self._enable_dropout_training()
+
+        self._disable_dropout_training()
 
         if metrics_train:
             self._plot_epoch_metrics(metrics_train, metrics_validation)
@@ -90,6 +95,9 @@ class NeuralNetworkModel(Model):
         :param batch: Batch of data
         """
 
+        for layer in filter(lambda l: isinstance(l, DropoutLayer), self.layers):
+            layer.start_batch()
+
         Δw, Δb = [], []
         for r in range(batch.shape[0]):
             row = batch.iloc[r]
@@ -126,18 +134,18 @@ class NeuralNetworkModel(Model):
             a_back = (x if k == 0 else a[k - 1]).astype(np.double)
             a.append(layer.forward(a_back))
 
-        da_forward = self._compute_loss_partial(y, a[-1])
+        da_k = self._compute_loss_partial(y, a[-1])
         Δw, Δb = [], []
         for k in range(len(self.layers) - 1, 0, -1):
             layer = self.layers[k]
-            Δw_k, Δb_k, da_k = layer.backward(
+            Δw_k, Δb_k, da_kmin1 = layer.backward(
                 a=a[k],
-                da_forward=da_forward,
+                da=da_k,
                 a_back=a[k - 1],
             )
             Δw.insert(0, self.learning_rate * Δw_k)
             Δb.insert(0, self.learning_rate * Δb_k)
-            da_forward = da_k
+            da_k = da_kmin1
 
         return Δw, Δb
 
@@ -191,6 +199,14 @@ class NeuralNetworkModel(Model):
             plt.legend()
             plt.show()
 
+    def _enable_dropout_training(self):
+        for layer in filter(lambda l: isinstance(l, DropoutLayer), self.layers):
+            layer.training = True
+
+    def _disable_dropout_training(self):
+        for layer in filter(lambda l: isinstance(l, DropoutLayer), self.layers):
+            layer.training = False
+
 class Layer:
     """
     Abstract class for a layer in a neural network.
@@ -208,20 +224,20 @@ class Layer:
         """
         raise Exception("Must be implemented by subclass")
 
-    def backward(self, a: np.ndarray, da_forward: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def backward(self, a: np.ndarray, da: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Backpropagate error through the layer.
 
         :param a: Outputs of this layer (shape: (1, num_neurons_in_layer))
-        :param da_forward: Error of next layer (shape: (1, num_neurons_in_next_layer))
+        :param da: Error of this layer's output (shape: (1, num_neurons_in_layer))
         :param a_back: Outputs of previous layer (shape: (1, num_neurons_in_layer-1))
-        :return: Change in weights, change in biases, and error for this layer
+        :return: Change in weights/bias for this layer, error of previous layer's output
         """
         raise Exception("Must be implemented by subclass")
 
     def update_weights(self, Δw: np.ndarray, Δb: np.ndarray):
         """
-        Update the weights of the layer.
+        Update the weights of the layer. Default behavior is to do nothing.
 
         :param Δw: Change in weights.
         :param Δb: Change in biases.
@@ -243,7 +259,7 @@ class InputLayer(Layer):
         return inputs
 
     def backward(self, a: np.ndarray, da_forward: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return None, None, None
+        raise Exception("Cannot backpropagate through input layer")
 
 class DenseLayer(Layer):
     """
@@ -287,23 +303,23 @@ class DenseLayer(Layer):
         z = self.weights.dot(inputs) + self.bias
         return self._activate(z)
 
-    def backward(self, a: np.ndarray, da_forward: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def backward(self, a: np.ndarray, da: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Backpropagate error through the layer.
 
         :param a: Outputs of this layer (shape: (1, num_neurons_in_layer))
-        :param da_forward: Error of next layer (shape: (1, num_neurons_in_next_layer))
+        :param da: Error of this layer's output (shape: (1, num_neurons_in_layer))
         :param a_back: Outputs of previous layer (shape: (1, num_neurons_in_layer-1))
-        :return: Change in weights, change in biases, and error for this layer
+        :return: Change in weights/biases for this layer and error for previous layer
         """
 
         da_dz = self._activation_fn_derivative(a)
-        dz = (da_forward * da_dz)
+        dz = da * da_dz
         Δw = -dz @ a_back.T / self.units
         Δb = -dz.mean(axis=1, keepdims=True)
 
-        da = self.weights.T.dot(dz)
-        return Δw, Δb, da
+        da_back = self.weights.T.dot(dz)
+        return Δw, Δb, da_back
 
     def update_weights(self, Δw: np.ndarray, Δb: np.ndarray):
         """
@@ -391,12 +407,66 @@ class DropoutLayer(Layer):
     Dropout layer in a neural network.
     """
 
-    def __init__(self, rate: float):
+    def __init__(
+        self,
+        rate: float,
+        rng: np.random.Generator = np.random.default_rng(),
+    ):
         """
         :param rate, float: Fraction of nodes to drop out (0.0 - 1.0)
+        :param rng, np.random.Generator: Random number generator
         """
+
         self.rate = rate
+        self.rng = rng
+        self.training = True
+        self.weights = None # Mask of nodes to drop (shape: (input_size, 1))
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
-        # For each row in input, replace it with zero with probability self.rate.
-        return np.where(np.random.rand(*inputs.shape) < self.rate, 0, inputs)
+        if not self.training:
+            # During inference, do not drop out any nodes
+            return inputs
+
+        if self.weights is None:
+            # Lazily construct weights to avoid having to specify input size on initialization.
+            self._reset_weights(inputs.shape)
+        elif inputs.shape != self.weights.shape:
+            raise Exception("Input size does not match ({} ≠ {})".format(inputs.shape, self.weights.shape))
+
+        # Since the weights are applied to only a subset of the inputs, we must scale the
+        # remaining inputs by the inverse of the dropout rate to maintain the same expected value.
+        effective_drop_rate = round(inputs.shape[0] * self.rate) / inputs.shape[0]
+        scale = 1 / (1 - effective_drop_rate)
+        return inputs * self.weights * scale
+
+    def backward(self, a: np.ndarray, da: np.ndarray, a_back: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Backpropagate error through the layer.
+
+        :param a: Outputs of this layer (shape: (1, num_neurons_in_layer))
+        :param da: Error of this layer's output (shape: (1, num_neurons_in_layer))
+        :param a_back: Outputs of previous layer (shape: (1, num_neurons_in_layer-1))
+        :return: Change in weights, change in biases, and error for this layer
+        """
+
+        da = self.weights * da
+        return 0, 0, da
+
+    def start_batch(self):
+        """
+        Select a new set of dropped nodes for the next batch.
+
+        Note: This should be called at the beginning of each batch.
+        """
+
+        if self.weights is None:
+            return
+
+        if not self.training:
+            raise Exception("Cannot start batch when not training.")
+
+        self._reset_weights(self.weights.shape)
+
+    def _reset_weights(self, input_shape: tuple[int]):
+#         self.weights = self.rng.binomial(1, 1 - self.rate, input_shape)
+        self.weights = np.ones(input_shape)

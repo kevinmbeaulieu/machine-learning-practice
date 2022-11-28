@@ -1,8 +1,9 @@
+import numpy as np
 import pandas as pd
 import unittest
 
 from utilities import crossvalidation
-from utilities.models.nn import NeuralNetworkModel, InputLayer, DenseLayer
+from utilities.models import nn
 from utilities.preprocessing import featurescaling, encoding
 from utilities.preprocessing.dataset import Dataset
 
@@ -34,13 +35,15 @@ class TestNeuralNetwork(unittest.TestCase):
         self._verify_classification_dataset(dataset)
 
     def _verify_classification_dataset(self, dataset: Dataset):
+        rng = np.random.default_rng(1)
+
         df = dataset.load_data()
         df_train, df_test = crossvalidation.split(df, frac=[0.8, 0.2], stratify_by='class')
         df_train, df_test = featurescaling.standardize_attributes(df_train, df_test, dataset)
         X_test = df_test.drop('class', axis=1)
         y_test = df_test['class']
 
-        model = NeuralNetworkModel(
+        model = nn.NeuralNetworkModel(
             batch_size=df_train.shape[0],
             learning_rate=0.01,
             num_epochs=500,
@@ -48,10 +51,13 @@ class TestNeuralNetwork(unittest.TestCase):
         )
         model.df_validation = df_test
         model.layers = [
-            InputLayer(X_test.shape[1]),
-            DenseLayer(500, activation='relu'),
-            DenseLayer(100, activation='relu'),
-            DenseLayer(df_train['class'].unique().shape[0], activation='softmax'),
+            nn.InputLayer(X_test.shape[1]),
+            nn.DropoutLayer(0.2, rng=rng),
+            nn.DenseLayer(500, activation='relu', rng=rng),
+            nn.DropoutLayer(0.5, rng=rng),
+            nn.DenseLayer(100, activation='relu', rng=rng),
+            nn.DropoutLayer(0.5, rng=rng),
+            nn.DenseLayer(df_train['class'].unique().shape[0], activation='softmax', rng=rng),
         ]
         model.train(df_train, dataset)
         got = model.predict(X_test)
@@ -83,12 +89,12 @@ class TestNeuralNetwork(unittest.TestCase):
         y_test = df_test['class']
         y_test.name = None
 
-        model = NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500, verbose=True)
+        model = nn.NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500, verbose=True)
         model.layers = [
-            InputLayer(2),
-            DenseLayer(100, activation='relu'),
-            DenseLayer(50, activation='relu'),
-            DenseLayer(3, activation='softmax'),
+            nn.InputLayer(2),
+            nn.DenseLayer(100, activation='relu'),
+            nn.DenseLayer(50, activation='relu'),
+            nn.DenseLayer(3, activation='softmax'),
         ]
         model.train(df_train, dataset)
         got = model.predict(X_test)
@@ -128,7 +134,7 @@ class TestNeuralNetwork(unittest.TestCase):
         X_test = df_test.drop('output', axis=1)
         y_test = df_test['output']
 
-        model = NeuralNetworkModel(
+        model = nn.NeuralNetworkModel(
             batch_size=df_train.shape[0],
             learning_rate=0.01,
             num_epochs=5000,
@@ -136,10 +142,10 @@ class TestNeuralNetwork(unittest.TestCase):
         )
         model.df_validation = df_test
         model.layers = [
-            InputLayer(X_test.shape[1]),
-            DenseLayer(500, activation='relu'),
-            DenseLayer(100, activation='relu'),
-            DenseLayer(1, activation='linear'),
+            nn.InputLayer(X_test.shape[1]),
+            nn.DenseLayer(500, activation='relu'),
+            nn.DenseLayer(100, activation='relu'),
+            nn.DenseLayer(1, activation='linear'),
         ]
         model.train(df_train, dataset)
         got = model.predict(X_test)
@@ -165,12 +171,12 @@ class TestNeuralNetwork(unittest.TestCase):
             metrics=['mse'],
         )
 
-        model = NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500, verbose=True)
+        model = nn.NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500, verbose=True)
         model.layers = [
-            InputLayer(2),
-            DenseLayer(100, activation='relu'),
-            DenseLayer(50, activation='relu'),
-            DenseLayer(1, activation='linear'),
+            nn.InputLayer(2),
+            nn.DenseLayer(100, activation='relu'),
+            nn.DenseLayer(50, activation='relu'),
+            nn.DenseLayer(1, activation='linear'),
         ]
         model.train(df_train, dataset)
         got = model.predict(df_test)
