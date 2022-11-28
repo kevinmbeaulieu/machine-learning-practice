@@ -3,7 +3,8 @@ import pandas as pd
 import unittest
 
 from utilities import crossvalidation
-from utilities.models import nn
+from utilities.models.nn import layers, optimizers
+from utilities.models.nn.model import NeuralNetworkModel
 from utilities.preprocessing import featurescaling, encoding
 from utilities.preprocessing.dataset import Dataset
 
@@ -12,7 +13,7 @@ class TestNeuralNetwork(unittest.TestCase):
         dataset = Dataset(
             name='iris',
             task='classification',
-            file_path='utilities/models/tests/fixtures/Iris.csv',
+            file_path='utilities/models/nn/tests/fixtures/Iris.csv',
             col_names=['id', 'sepal_length', 'sepal_width', 'petal_length', 'petal_width', 'class'],
             header=0,
             ignore_cols=['id'],
@@ -25,7 +26,7 @@ class TestNeuralNetwork(unittest.TestCase):
         dataset = Dataset(
             name='fruit',
             task='classification',
-            file_path='utilities/models/tests/fixtures/fruit_data_with_colours.csv',
+            file_path='utilities/models/nn/tests/fixtures/fruit_data_with_colours.csv',
             col_names=['fruit_label', 'class', 'fruit_subtype', 'mass', 'width', 'height', 'color_score'],
             header=0,
             ignore_cols=['fruit_label', 'fruit_subtype'],
@@ -43,21 +44,18 @@ class TestNeuralNetwork(unittest.TestCase):
         X_test = df_test.drop('class', axis=1)
         y_test = df_test['class']
 
-        model = nn.NeuralNetworkModel(
+        model = NeuralNetworkModel(
             batch_size=df_train.shape[0],
-            learning_rate=0.01,
             num_epochs=500,
+            optimizer=optimizers.Adam(),
             verbose=True
         )
         model.df_validation = df_test
         model.layers = [
-            nn.InputLayer(X_test.shape[1]),
-            nn.DropoutLayer(0.2, rng=rng),
-            nn.DenseLayer(500, activation='relu', rng=rng),
-            nn.DropoutLayer(0.5, rng=rng),
-            nn.DenseLayer(100, activation='relu', rng=rng),
-            nn.DropoutLayer(0.5, rng=rng),
-            nn.DenseLayer(df_train['class'].unique().shape[0], activation='softmax', rng=rng),
+            layers.Input(X_test.shape[1]),
+            layers.Dense(500, activation='relu', rng=rng),
+            layers.Dense(100, activation='relu', rng=rng),
+            layers.Dense(df_train['class'].unique().shape[0], activation='softmax', rng=rng),
         ]
         model.train(df_train, dataset)
         got = model.predict(X_test)
@@ -89,12 +87,17 @@ class TestNeuralNetwork(unittest.TestCase):
         y_test = df_test['class']
         y_test.name = None
 
-        model = nn.NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500, verbose=True)
+        model = NeuralNetworkModel(
+            batch_size=6,
+            num_epochs=500,
+            optimizer=optimizers.Adam(),
+            verbose=True
+        )
         model.layers = [
-            nn.InputLayer(2),
-            nn.DenseLayer(100, activation='relu'),
-            nn.DenseLayer(50, activation='relu'),
-            nn.DenseLayer(3, activation='softmax'),
+            layers.Input(2),
+            layers.Dense(100, activation='relu'),
+            layers.Dense(50, activation='relu'),
+            layers.Dense(3, activation='softmax'),
         ]
         model.train(df_train, dataset)
         got = model.predict(X_test)
@@ -105,7 +108,7 @@ class TestNeuralNetwork(unittest.TestCase):
         dataset = Dataset(
             name='fish',
             task='classification',
-            file_path='utilities/models/tests/fixtures/Fish.csv',
+            file_path='utilities/models/nn/tests/fixtures/Fish.csv',
             col_names=['class', 'weight', 'length1', 'length2', 'length3', 'height', 'width'],
             header=0,
             standardize_cols=['weight', 'length1', 'length2', 'length3', 'height', 'width'],
@@ -117,7 +120,7 @@ class TestNeuralNetwork(unittest.TestCase):
         dataset = Dataset(
             name='fish',
             task='regression',
-            file_path='utilities/models/tests/fixtures/Fish.csv',
+            file_path='utilities/models/nn/tests/fixtures/Fish.csv',
             col_names=['species', 'output', 'length1', 'length2', 'length3', 'height', 'width'],
             header=0,
             standardize_cols=['length1', 'length2', 'length3', 'height', 'width'],
@@ -134,18 +137,18 @@ class TestNeuralNetwork(unittest.TestCase):
         X_test = df_test.drop('output', axis=1)
         y_test = df_test['output']
 
-        model = nn.NeuralNetworkModel(
+        model = NeuralNetworkModel(
             batch_size=df_train.shape[0],
-            learning_rate=0.01,
-            num_epochs=5000,
+            num_epochs=1000,
+            optimizer=optimizers.Adam(),
             verbose=True
         )
         model.df_validation = df_test
         model.layers = [
-            nn.InputLayer(X_test.shape[1]),
-            nn.DenseLayer(500, activation='relu'),
-            nn.DenseLayer(100, activation='relu'),
-            nn.DenseLayer(1, activation='linear'),
+            layers.Input(X_test.shape[1]),
+            layers.Dense(500, activation='relu'),
+            layers.Dense(100, activation='relu'),
+            layers.Dense(1, activation='linear'),
         ]
         model.train(df_train, dataset)
         got = model.predict(X_test)
@@ -171,12 +174,17 @@ class TestNeuralNetwork(unittest.TestCase):
             metrics=['mse'],
         )
 
-        model = nn.NeuralNetworkModel(batch_size=6, learning_rate=0.001, num_epochs=500, verbose=True)
+        model = NeuralNetworkModel(
+            batch_size=6,
+            num_epochs=1000,
+            optimizer=optimizers.Adam(),
+            verbose=True
+        )
         model.layers = [
-            nn.InputLayer(2),
-            nn.DenseLayer(100, activation='relu'),
-            nn.DenseLayer(50, activation='relu'),
-            nn.DenseLayer(1, activation='linear'),
+            layers.Input(2),
+            layers.Dense(500, activation='relu'),
+            layers.Dense(100, activation='relu'),
+            layers.Dense(1, activation='linear'),
         ]
         model.train(df_train, dataset)
         got = model.predict(df_test)
