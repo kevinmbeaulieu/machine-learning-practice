@@ -133,3 +133,6 @@ pyrightconfig.json
 
 # macOS
 .DS_Store
+
+# Xcode
+xcuserdata/
