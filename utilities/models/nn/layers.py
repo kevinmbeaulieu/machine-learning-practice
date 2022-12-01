@@ -1,3 +1,4 @@
+from typing import Tuple
 import numpy as np
 
 class Layer:
@@ -193,6 +194,74 @@ class Dense(Layer):
             return a * (1 - a)
         elif self.activation == 'linear':
             return np.ones(a.shape)
+
+class Convolutional(Layer):
+    """
+    Convolutional layer in a neural network.
+    """
+
+    def __init__(
+        self,
+        kernel_size: tuple[int, int],
+        stride: int = 1,
+        activation: str = 'linear',
+        rng: np.random.Generator = np.random.default_rng(),
+    ):
+        """
+        :param kernel_size, tuple[int, int]: Size of the convolutional kernel (height, width).
+        :param stride, int: Stride of the convolutional kernel (default: 1).
+        :param activation, str: Activation function for each node in this layer
+            ('sigmoid', 'relu', 'tanh', 'linear'; default: 'linear')
+        :param rng, np.random.Generator: Random number generator
+        """
+
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.activation = activation
+        self.rng = rng
+        self.kernel = None
+        super().__init__()
+
+    def forward(self, inputs: np.ndarray) -> np.ndarray:
+        """
+        Forward propagate inputs through the layer.
+
+        :param inputs: Inputs to the layer (shape: (height, width)).
+        :return: Outputs of the layer (shape: (height, width)).
+        """
+
+        if self.kernel is None:
+            # Lazily construct kernel to avoid having to specify input size on initialization.
+            self._initialize_kernel(inputs.shape)
+        elif inputs.shape != (self.kernel.shape):
+            raise ValueError("Input size does not match ({} ≠ {})".format(inputs.shape, (self.kernel.shape)))
+
+        return self._activate(z)
+
+    def backward(
+        self,
+        a: np.ndarray,
+        da: np.ndarray,
+        a_back: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        raise NotImplementedError
+
+    def update_weights(self, Δw: np.ndarray, Δb: np.ndarray):
+        raise NotImplementedError
+
+    def _initialize_kernel(self, input_size: Tuple[int, ...]):
+        if self.activation == 'relu':
+            # He-et-al normal initialization.
+            variance = 2.0 / max(1.0, input_size)
+            self.kernel = self.rng.normal(0, variance, self.kernel_size)
+
+        elif self.activation == 'tanh' or self.activation == 'sigmoid':
+            # Xavier normal initialization.
+            variance = 1.0 / max(1.0, (input_size + np.prod(self.kernel_size)) / 2.0)
+            self.kernel = self.rng.normal(0, variance, self.kernel_size)
+
+        else:
+            self.kernel = self.rng.standard_normal(self.kernel_size)
 
 class Dropout(Layer):
     """
