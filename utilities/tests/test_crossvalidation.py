@@ -3,7 +3,7 @@ import pandas as pd
 import random
 import unittest
 
-from utilities.crossvalidation import cross_validate, split_for_cross_validation
+from utilities.crossvalidation import split_for_cross_validation
 from utilities.preprocessing.dataset import Dataset
 
 class TestCrossValidation(unittest.TestCase):
